@@ -1,28 +1,28 @@
 package org.example.yazlab21.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Map;
+import java.util.List;
 
 @Slf4j
 @Service
 public class GeocodingService {
 
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    // OpenStreetMap Nominatim API URL
+    private static final String NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 
     // Kocaeli'deki ana ilçeler
     private static final String[] KOCAELI_DISTRICTS = {
-        "İzmit", "Körfez", "Derince", "Gölcük", "Başiskele", "Kandıra", 
-        "Çayırova", "Dilovası", "Kartepe", "Gebze", "Darıca", "Pendik"
-    };
-
-    // Kocaeli'deki önemli mahallar ve mevkiiler
-    private static final String[] KOCAELI_LOCATIONS = {
-        "Karabaş", "Yeni Mahalle", "Eski Mahalle", "Osmangazi Köprüsü",
-        "Antikkapı", "Kazım Karabekir", "Şehitler", "Doğantepe", 
-        "Yığılcalı", "Akçaova", "Hereke", "Çifte Sabalar"
+            "İzmit", "Körfez", "Derince", "Gölcük", "Başiskele", "Kandıra",
+            "Çayırova", "Dilovası", "Kartepe", "Gebze", "Darıca", "Karamürsel"
     };
 
     /**
@@ -33,79 +33,168 @@ public class GeocodingService {
             return null;
         }
 
-        // İlçe adlarını ara
+        String foundDistrict = "";
+        String foundDetail = "";
+
+        // 1. Önce Hangi İlçede Olduğunu Bul
         for (String district : KOCAELI_DISTRICTS) {
+            // Tam kelime eşleşmesi aramak daha güvenlidir ama esnek bırakıyoruz
             if (text.toLowerCase().contains(district.toLowerCase())) {
-                return district;
+                foundDistrict = district;
+                break;
             }
         }
 
-        // Mahalle adlarını ara
-        for (String location : KOCAELI_LOCATIONS) {
-            if (text.toLowerCase().contains(location.toLowerCase())) {
-                return location;
+        // 2. Özel bilinen büyük mahalleleri manuel yakala (Regex bazen kaçırabilir)
+        String[] bilinenMahalleler = {"Yahya Kaptan", "Yenişehir", "Bekirdere", "Karabaş", "Yenidoğan", "Plajyolu", "Sanayi", "Yuvam Akarca"};
+        for (String mahalle : bilinenMahalleler) {
+            if (text.toLowerCase().contains(mahalle.toLowerCase())) {
+                foundDetail = mahalle + " Mahallesi";
+                break;
             }
         }
 
-        // Regex ile konum deseni ara (örn. "X. Cadde", "Y. Sokak")
-        Pattern locationPattern = Pattern.compile(
-            "(\\w+\\s+(Cadde|Caddesi|Sokak|Sokaği|Mahalle|Mah\\.|Köy|Mevki|Pasa|Pasha))\\s*[,.]*",
-            Pattern.CASE_INSENSITIVE
-        );
-        Matcher matcher = locationPattern.matcher(text);
+        // 3. Eğer hala bulamadıysa Regex ile detaylı adres bulmaya çalış
+        if (foundDetail.isEmpty()) {
+            Pattern locationPattern = Pattern.compile(
+                    "([A-Za-zÇĞİÖŞÜçğıöşü]+(?:\\s+[A-Za-zÇĞİÖŞÜçğıöşü]+){0,2}\\s+(Mahallesi|Mah\\.|Cadde|Caddesi|Sokak|Sokağı|Mevkii|Mevki|Köyü|Yolu))",
+                    Pattern.CASE_INSENSITIVE
+            );
+            Matcher matcher = locationPattern.matcher(text);
 
-        if (matcher.find()) {
-            String extractedLocation = matcher.group(1).trim();
-            if (extractedLocation.length() > 3) {
-                return extractedLocation;
+            if (matcher.find()) {
+                foundDetail = matcher.group(1).trim();
             }
+        }
+
+        // 4. Bulunanları birleştir
+        if (!foundDetail.isEmpty() && !foundDistrict.isEmpty()) {
+            return foundDetail + ", " + foundDistrict;
+        } else if (!foundDetail.isEmpty()) {
+            return foundDetail;
+        } else if (!foundDistrict.isEmpty()) {
+            return foundDistrict;
         }
 
         return null;
     }
 
     /**
-     * Kocaeli'ye ait bilinir konumlar için önceden tanımlanmış koordinatlar
+     * Çıkarılan adresi OpenStreetMap (Nominatim) API'sine sorarak koordinatları alır
      */
     public LocationCoordinates getKocaeliLocationCoordinates(String locationName) {
-        if (locationName == null) {
+        if (locationName == null || locationName.trim().isEmpty()) {
             return null;
         }
 
-        // Önceden tanımlanmış koordinatlar (gerçek değerler)
-        String lowerName = locationName.toLowerCase();
-        
-        if (lowerName.contains("izmit")) {
-            return new LocationCoordinates("İzmit", 40.7671, 29.9427, "İzmit, Kocaeli");
-        } else if (lowerName.contains("körfez")) {
-            return new LocationCoordinates("Körfez", 40.8333, 29.8500, "Körfez, Kocaeli");
-        } else if (lowerName.contains("derince")) {
-            return new LocationCoordinates("Derince", 40.8222, 29.7833, "Derince, Kocaeli");
-        } else if (lowerName.contains("gölcük")) {
-            return new LocationCoordinates("Gölcük", 40.7333, 29.7500, "Gölcük, Kocaeli");
-        } else if (lowerName.contains("başiskele")) {
-            return new LocationCoordinates("Başiskele", 40.8167, 29.6667, "Başiskele, Kocaeli");
-        } else if (lowerName.contains("kandıra")) {
-            return new LocationCoordinates("Kandıra", 40.9833, 30.2500, "Kandıra, Kocaeli");
-        } else if (lowerName.contains("çayırova")) {
-            return new LocationCoordinates("Çayırova", 40.8833, 29.6333, "Çayırova, Kocaeli");
-        } else if (lowerName.contains("dilovası")) {
-            return new LocationCoordinates("Dilovası", 40.8000, 29.5000, "Dilovası, Kocaeli");
-        } else if (lowerName.contains("kartepe")) {
-            return new LocationCoordinates("Kartepe", 40.8500, 29.7000, "Kartepe, Kocaeli");
-        } else if (lowerName.contains("gebze")) {
-            return new LocationCoordinates("Gebze", 40.7667, 29.4500, "Gebze, Kocaeli");
-        } else if (lowerName.contains("osmangazi köprüsü")) {
-            return new LocationCoordinates("Osmangazi Köprüsü", 40.8458, 29.4825, "Osmangazi Köprüsü");
-        } else if (lowerName.contains("antikkapı")) {
-            return new LocationCoordinates("Antikkapı", 40.7600, 29.9600, "Antikkapı, İzmit");
-        } else if (lowerName.contains("karabaş")) {
-            return new LocationCoordinates("Karabaş", 40.7650, 29.9500, "Karabaş, İzmit");
-        } else if (lowerName.contains("hereke")) {
-            return new LocationCoordinates("Hereke", 40.8250, 29.7200, "Hereke, Körfez");
-        }
+        try {
+            // API'ye saygılı istek
+            Thread.sleep(1000);
 
-        // Eşleşme yoksa null dön
+            // 1. Deneme: Tam Adres ile Ara (Örn: "Yahya Kaptan Mahallesi, İzmit, Kocaeli")
+            String tamAdres = locationName;
+            if (!tamAdres.toLowerCase().contains("kocaeli")) {
+                tamAdres += ", Kocaeli";
+            }
+
+            LocationCoordinates result = callNominatimAPI(tamAdres, locationName);
+            if (result != null) return result;
+
+            // 2. Deneme: Virgülle ayrılmış bir adres ise (Örn "Yahya Kaptan Mahallesi, İzmit")
+            // Sadece Mahalleyi + Kocaeli'yi arat (Bazen ilçe ismi API'nin kafasını karıştırır)
+            if (locationName.contains(",")) {
+                Thread.sleep(1000);
+                String sadeceMahalle = locationName.split(",")[0].trim() + ", Kocaeli";
+                log.info("🔄 Tam adres bulunamadı, genişletilmiş arama deneniyor: {}", sadeceMahalle);
+
+                result = callNominatimAPI(sadeceMahalle, locationName);
+                if (result != null) return result;
+
+                // 3. Deneme: 'Mahallesi' vb. kelimeleri atıp arat (Örn: "Yahya Kaptan, Kocaeli")
+                Thread.sleep(1000);
+                String safIsim = locationName.split(",")[0].replaceAll("(?i)Mahallesi|Mah\\.|Sokak|Sokağı|Cadde|Caddesi", "").trim();
+                if (!safIsim.isEmpty()) {
+                    String enSafAdres = safIsim + ", Kocaeli";
+                    log.info("🔄 Son çare arama deneniyor: {}", enSafAdres);
+                    result = callNominatimAPI(enSafAdres, locationName);
+                    if (result != null) return result;
+                }
+            }
+
+            // Hiçbiri bulamazsa yedek sisteme düş
+            log.warn("❌ Tüm API aramaları '{}' için sonuçsuz kaldı. Yedek sisteme (İlçe) geçiliyor.", locationName);
+            return getFallbackCoordinates(locationName);
+
+        } catch (Exception e) {
+            log.error("Geocoding API hatası: {}", e.getMessage());
+            return getFallbackCoordinates(locationName);
+        }
+    }
+
+    /**
+     * API'ye istek atan yardımcı metod
+     */
+    private LocationCoordinates callNominatimAPI(String searchQuery, String originalName) {
+        try {
+            String url = UriComponentsBuilder.fromUriString(NOMINATIM_URL)
+                    .queryParam("q", searchQuery)
+                    .queryParam("format", "json")
+                    .queryParam("limit", 1)
+                    // Türkiye içi sonuçlara öncelik vermek için ülke kodu
+                    .queryParam("countrycodes", "tr")
+                    .build()
+                    .toUriString();
+
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.set("User-Agent", "YazlabHaberHaritasi/1.0");
+            org.springframework.http.HttpEntity<String> entity = new org.springframework.http.HttpEntity<>(headers);
+
+            org.springframework.http.ResponseEntity<List> response = restTemplate.exchange(
+                    url,
+                    org.springframework.http.HttpMethod.GET,
+                    entity,
+                    List.class
+            );
+
+            List<Map<String, Object>> results = response.getBody();
+
+            if (results != null && !results.isEmpty()) {
+                Map<String, Object> firstResult = results.get(0);
+                double lat = Double.parseDouble(firstResult.get("lat").toString());
+                double lon = Double.parseDouble(firstResult.get("lon").toString());
+                String displayName = firstResult.get("display_name").toString();
+
+                log.info("📍 Harita API Koordinat Buldu: {} -> ({}, {})", searchQuery, lat, lon);
+                // Dönen ismi orijinal isim olarak tutuyoruz ki arayüzde saçma sapan uzun adresler çıkmasın
+                return new LocationCoordinates(originalName, lat, lon, displayName);
+            }
+        } catch (Exception e) {
+            log.warn("API isteği başarısız oldu ({}): {}", searchQuery, e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Eğer API cevap vermezse veya adresi bulamazsa eski sistemdeki gibi ilçe merkezini döndürür.
+     * Denizin ortasına düşen koordinatlar düzeltilmiştir.
+     */
+    private LocationCoordinates getFallbackCoordinates(String locationName) {
+        String lowerName = locationName.toLowerCase();
+
+        if (lowerName.contains("izmit")) return new LocationCoordinates("İzmit", 40.7671, 29.9427, "İzmit, Kocaeli");
+        if (lowerName.contains("körfez")) return new LocationCoordinates("Körfez", 40.7900, 29.7400, "Körfez, Kocaeli"); // Denizden karaya çekildi
+        if (lowerName.contains("derince")) return new LocationCoordinates("Derince", 40.7550, 29.8300, "Derince, Kocaeli");
+        // Gölcük koordinatı karaya alındı (Önceki deniz ortasıydı)
+        if (lowerName.contains("gölcük")) return new LocationCoordinates("Gölcük", 40.7180, 29.8200, "Gölcük, Kocaeli");
+        if (lowerName.contains("başiskele")) return new LocationCoordinates("Başiskele", 40.7167, 29.9333, "Başiskele, Kocaeli");
+        if (lowerName.contains("kandıra")) return new LocationCoordinates("Kandıra", 41.0667, 30.1500, "Kandıra, Kocaeli");
+        if (lowerName.contains("çayırova")) return new LocationCoordinates("Çayırova", 40.8250, 29.3800, "Çayırova, Kocaeli");
+        if (lowerName.contains("dilovası")) return new LocationCoordinates("Dilovası", 40.7850, 29.5400, "Dilovası, Kocaeli");
+        if (lowerName.contains("kartepe")) return new LocationCoordinates("Kartepe", 40.7500, 30.0167, "Kartepe, Kocaeli");
+        if (lowerName.contains("gebze")) return new LocationCoordinates("Gebze", 40.8000, 29.4300, "Gebze, Kocaeli");
+        if (lowerName.contains("darıca")) return new LocationCoordinates("Darıca", 40.7667, 29.4000, "Darıca, Kocaeli");
+        if (lowerName.contains("karamürsel")) return new LocationCoordinates("Karamürsel", 40.6917, 29.6167, "Karamürsel, Kocaeli");
+
         return null;
     }
 
@@ -130,6 +219,3 @@ public class GeocodingService {
         }
     }
 }
-
-
-
