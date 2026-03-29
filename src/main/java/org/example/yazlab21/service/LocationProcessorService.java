@@ -101,20 +101,20 @@ public class LocationProcessorService {
     }
 
     public void processAllNewsLocations() {
-        log.info("Tüm haberlerin konumları işlenmeye başlandı...");
+        log.info("Tüm haberlerin konumları ZORUNLU olarak yeniden işlenmeye başlandı...");
         try {
             List<Haber> allNews = haberRepository.findAll();
             int processed = 0;
             for (Haber haber : allNews) {
-                if ((haber.getEnlem() == null || haber.getEnlem() == 0) &&
-                        (haber.getBoylam() == null || haber.getBoylam() == 0)) {
-
-                    Haber processedHaber = processLocationForNews(haber);
+                // ARTIK ESKİ KOORDİNATI OLSA BİLE YENİDEN İŞLEYECEK (Force Update)
+                // Haber zaten kayıtlı, sadece konumunu güncelleyip üstüne yazacağız
+                Haber processedHaber = processLocationForNews(haber);
+                if (processedHaber != null) {
                     haberRepository.save(processedHaber);
                     processed++;
                 }
             }
-            log.info("Konum işlemesi tamamlandı. {} haber işlendi.", processed);
+            log.info("Konum işlemesi tamamlandı. Toplam {} haber yeni API ile güncellendi.", processed);
         } catch (Exception e) {
             log.error("Toplu konum işlemesi sırasında hata: {}", e.getMessage(), e);
         }
