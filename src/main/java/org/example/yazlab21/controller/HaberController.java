@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.yazlab21.model.Haber;
 import org.example.yazlab21.repository.HaberRepository;
 import org.example.yazlab21.scraper.*;
+import org.example.yazlab21.service.LocationProcessorService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,6 +17,9 @@ import java.util.List;
 public class HaberController {
 
     private final HaberRepository haberRepository;
+    private final LocationProcessorService locationProcessorService; // ← YENİ
+
+    // ...existing code...
 
     // Bütün botlarımızı buraya çağırıyoruz (Spring bunları bizim için hazırlayacak)
     private final YenikocaeliScraper yenikocaeliScraper;
@@ -56,6 +60,12 @@ public class HaberController {
             sesKocaeliScraper.scrapeSesKocaeli();
 
             System.out.println("\n✅ TÜM SİTELER BAŞARIYLA TARANDI VE VERİTABANINA KAYDEDİLDİ!");
+            
+            // 🔍 BENZER HABERLER AYRIŞTIRILIP SİLİNECEK VEYA TUTULACAK
+            System.out.println("\n🔍 BENZER HABERLER İÇİN KONUM SPESİFİKLİK KONTROLÜ YAPILIYOR...");
+            locationProcessorService.deduplicateAndKeepMostSpecific();
+            System.out.println("✅ İŞLEM TAMAMLANDI!\n");
+            
             return ResponseEntity.ok("İşlem Başarılı");
 
         } catch (Exception e) {

@@ -12,4 +12,11 @@ public class PageController {
         // static klasörünün içindeki admin-panel.html dosyasına yönlendir (forward)
         return "forward:/admin-panel.html";
     }
+
+    // Harita sayfası
+    @GetMapping("/map")
+    public String getMapPage() {
+        // static klasörünün içindeki map.html dosyasına yönlendir (forward)
+        return "forward:/map.html";
+    }
 }

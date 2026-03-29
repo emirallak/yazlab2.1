@@ -37,6 +37,8 @@
       border-radius: 8px;
       cursor: pointer;
       transition: background-color 0.3s ease, transform 0.1s;
+      width: 100%;
+      margin-bottom: 10px;
     }
     button:hover {
       background-color: #c0392b;
@@ -47,6 +49,33 @@
     button:disabled {
       background-color: #95a5a6;
       cursor: not-allowed;
+    }
+    /* ADIM 1 - Kırmızı */
+    #tetikleBtn {
+      background-color: #e74c3c;
+    }
+    #tetikleBtn:hover {
+      background-color: #c0392b;
+    }
+    /* ADIM 2 - Mor */
+    .process-btn {
+      background-color: #9b59b6;
+    }
+    .process-btn:hover {
+      background-color: #8e44ad;
+    }
+    /* ADIM 3 - Mavi */
+    .map-btn {
+      background-color: #3498db;
+    }
+    .map-btn:hover {
+      background-color: #2980b9;
+    }
+    h3 {
+      font-size: 14px;
+      margin-bottom: 12px;
+      padding-left: 10px;
+      border-left: 4px solid #2196F3;
     }
     #durum {
       margin-top: 20px;
@@ -89,9 +118,16 @@
 
 <div class="container">
   <h1>🤖 Haber Botu Yönetimi</h1>
-  <p style="color: #7f8c8d; margin-bottom: 30px;">Tüm siteleri sırayla taramak için aşağıdaki butona tıklayın.</p>
+  <p style="color: #7f8c8d; margin-bottom: 30px;">🌍 OpenStreetMap + Nominatim (Ücretsiz Geocoding)</p>
 
+  <h3 style="color: #2c3e50; margin-bottom: 15px; text-align: left;">📋 ADIM 1: Haberleri Topla (En Spesifik Konum Seçilir)</h3>
   <button id="tetikleBtn">Botları Ateşle 🔥</button>
+
+  <h3 style="color: #2c3e50; margin-top: 20px; margin-bottom: 15px; text-align: left;">📍 ADIM 2: Konumları İşle</h3>
+  <button class="process-btn" onclick="processLocations()">Konumları İşle 📍</button>
+
+  <h3 style="color: #2c3e50; margin-top: 20px; margin-bottom: 15px; text-align: left;">🗺️ ADIM 3: Haritayı Aç</h3>
+  <button class="map-btn" onclick="openMap()">Haritayı Aç 🗺️</button>
 
   <div id="durum"></div>
 </div>
@@ -99,6 +135,41 @@
 <script>
   const tetikleBtn = document.getElementById('tetikleBtn');
   const durumDiv = document.getElementById('durum');
+
+  // Haritayı aç
+  function openMap() {
+    window.open('http://localhost:8080/map', '_blank', 'width=1200,height=800');
+  }
+
+  // Konumları işle
+  function processLocations() {
+    tetikleBtn.disabled = true;
+
+    durumDiv.className = 'loading';
+    durumDiv.innerHTML = '<div class="loader"></div> Tüm haberlerin konumları işleniyor...';
+    durumDiv.style.display = 'block';
+
+    fetch('http://localhost:8080/api/scrape/all-locations', {
+      method: 'POST'
+    })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Sunucu hatası oluştu!');
+        }
+        return response.text();
+      })
+      .then(data => {
+        durumDiv.className = 'success';
+        durumDiv.innerHTML = '✅ Tüm haberlerin konumları işlendi! Haritada görmek için "Haritayı Aç" butonuna tıkla.';
+      })
+      .catch(error => {
+        durumDiv.className = 'error';
+        durumDiv.innerHTML = '❌ Bir hata oluştu: ' + error.message;
+      })
+      .finally(() => {
+        tetikleBtn.disabled = false;
+      });
+  }
 
   tetikleBtn.addEventListener('click', () => {
     // Butonu kilitle ve yükleniyor animasyonu göster
