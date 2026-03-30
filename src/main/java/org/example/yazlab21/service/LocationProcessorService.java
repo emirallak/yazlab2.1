@@ -35,25 +35,32 @@ public class LocationProcessorService {
                     haber.getBaslik() + " " + haber.getIcerik()
             );
 
-            if (konumMetni != null && !konumMetni.isEmpty()) {
-                haber.setKonumMetni(konumMetni);
-                log.info("Haberden konum çıkarıldı: {} - {}", haber.getBaslik(), konumMetni);
+            if (konumMetni == null || konumMetni.isEmpty()) {
+                konumMetni = "İzmit"; // Merkez varsayımı
+            }
 
-                String finalLocation = findMostSpecificLocationForSimilarNews(haber);
+            haber.setKonumMetni(konumMetni);
+            log.info("Haberden konum çıkarıldı: {} - {}", haber.getBaslik(), konumMetni);
 
-                if (finalLocation != null) {
-                    GeocodingService.LocationCoordinates coords =
-                            geocodingService.getKocaeliLocationCoordinates(finalLocation);
+            String finalLocation = findMostSpecificLocationForSimilarNews(haber);
 
-                    if (coords != null && coords.isValid()) {
-                        haber.setEnlem(coords.latitude);
-                        haber.setBoylam(coords.longitude);
-                        haber.setKonumMetni(finalLocation);
+            if (finalLocation != null && !finalLocation.isBlank()) {
+                GeocodingService.LocationCoordinates coords =
+                        geocodingService.getKocaeliLocationCoordinates(finalLocation);
 
-                        log.info("Konum geocoded: {} => ({}, {})",
-                                finalLocation, coords.latitude, coords.longitude);
-                    }
+                if (coords != null && coords.isValid()) {
+                    haber.setEnlem(coords.latitude);
+                    haber.setBoylam(coords.longitude);
+                    haber.setKonumMetni(finalLocation);
+
+                    log.info("Konum geocoded: {} => ({}, {})",
+                            finalLocation, coords.latitude, coords.longitude);
+                } else {
+                    log.warn("Geocode başarısız, varsayılan merkez uygulanacak: {}", finalLocation);
+                    applyDefaultCoordinates(haber);
                 }
+            } else {
+                applyDefaultCoordinates(haber);
             }
         } catch (Exception e) {
             log.error("Konum işlemesi sırasında hata: {}", e.getMessage(), e);
@@ -213,13 +220,19 @@ public class LocationProcessorService {
                     String b1 = haber1.getBaslik().toLowerCase().replaceAll("[^a-zğüşıöç0-9]", " ").replaceAll("\\s+", " ").trim();
                     String b2 = haber2.getBaslik().toLowerCase().replaceAll("[^a-zğüşıöç0-9]", " ").replaceAll("\\s+", " ").trim();
 
-                    double titleSimilarity = similarityService.calculateSimilarity(haber1.getBaslik(), haber2.getBaslik());
-                    double contentSimilarity = similarityService.calculateSimilarity(haber1.getIcerik(), haber2.getIcerik());
+                    // Hem Levenshtein hem Cosine (kelime bazlı) benzerlik hesaplıyoruz
+                    double titleLevenshtein = similarityService.calculateSimilarity(haber1.getBaslik(), haber2.getBaslik());
+                    double titleCosine = similarityService.calculateCosineSimilarity(haber1.getBaslik(), haber2.getBaslik());
+                    
+                    double contentSimilarity = similarityService.calculateSimilarity(
+                            normalizeContentForSimilarity(haber1.getIcerik()),
+                            normalizeContentForSimilarity(haber2.getIcerik()));
 
                     boolean isSameEvent = false;
 
-                    // 1. Genel Metin Benzerliği (Eşikleri düşürdük)
-                    if (titleSimilarity >= 0.50 || (titleSimilarity >= 0.35 && contentSimilarity >= 0.40)) {
+                    // 1. Genel Metin veya Kelime Kesişimi
+                    // Cosine similarity kelime sırasından bağımsız olarak benzerliği ölçtüğü için aynı haberi yakalamada çok daha iyidir.
+                    if (titleCosine >= 0.50 || titleLevenshtein >= 0.50 || (titleCosine >= 0.40 && contentSimilarity >= 0.40)) {
                         isSameEvent = true;
                     }
 
@@ -247,44 +260,18 @@ public class LocationProcessorService {
                     }
 
                     if (isSameEvent) {
-                        int score1 = getSpecificityScore(haber1.getKonumMetni());
-                        int score2 = getSpecificityScore(haber2.getKonumMetni());
+                        DedupDecision decision = pickKeepAndMerge(haber1, haber2);
 
-                        Haber keep;
-                        Haber remove;
-                        String reason;
+                        if (decision.updatedKeep) haberRepository.save(decision.keep);
 
-                        if (score1 > score2) {
-                            keep = haber1;
-                            remove = haber2;
-                            reason = "Daha Spesifik Konum (" + score1 + " > " + score2 + ")";
-                        } else if (score2 > score1) {
-                            keep = haber2;
-                            remove = haber1;
-                            reason = "Daha Spesifik Konum (" + score2 + " > " + score1 + ")";
-                        } else {
-                            if (haber1.getYayinTarihi() != null && haber2.getYayinTarihi() != null) {
-                                if (haber2.getYayinTarihi().isAfter(haber1.getYayinTarihi())) {
-                                    keep = haber1;
-                                    remove = haber2;
-                                } else {
-                                    keep = haber2;
-                                    remove = haber1;
-                                }
-                            } else {
-                                keep = haber1;
-                                remove = haber2;
-                            }
-                            reason = "Aynı Konum Düzeyi (Eski Olan Tutuldu)";
-                        }
+                        toDeleteIds.add(decision.remove.getId());
 
-                        toDeleteIds.add(remove.getId());
                         log.info("✂️ SILINDI ({}): '{}' | TUTULDU ({}): '{}' | SEBEP: {}",
-                                remove.getKaynakAd() != null ? remove.getKaynakAd() : "?",
-                                remove.getBaslik(),
-                                keep.getKaynakAd() != null ? keep.getKaynakAd() : "?",
-                                keep.getBaslik(),
-                                reason);
+                                decision.remove.getKaynakAd() != null ? decision.remove.getKaynakAd() : "?",
+                                decision.remove.getBaslik(),
+                                decision.keep.getKaynakAd() != null ? decision.keep.getKaynakAd() : "?",
+                                decision.keep.getBaslik(),
+                                decision.reason);
                     }
                 }
             }
@@ -304,6 +291,111 @@ public class LocationProcessorService {
 
         } catch (Exception e) {
             log.error("Benzerlik ayrıştırma sırasında hata: {}", e.getMessage(), e);
+        }
+    }
+
+    private DedupDecision pickKeepAndMerge(Haber haber1, Haber haber2) {
+        double score1 = getLocationQuality(haber1);
+        double score2 = getLocationQuality(haber2);
+
+        Haber keep;
+        Haber remove;
+        String reason;
+
+        if (score1 > score2) {
+            keep = haber1;
+            remove = haber2;
+            reason = "Daha spesifik/koordinatlı konum (" + score1 + " > " + score2 + ")";
+        } else if (score2 > score1) {
+            keep = haber2;
+            remove = haber1;
+            reason = "Daha spesifik/koordinatlı konum (" + score2 + " > " + score1 + ")";
+        } else if (hasCoordinates(haber1) && !hasCoordinates(haber2)) {
+            keep = haber1;
+            remove = haber2;
+            reason = "Koordinat var";
+        } else if (hasCoordinates(haber2) && !hasCoordinates(haber1)) {
+            keep = haber2;
+            remove = haber1;
+            reason = "Koordinat var";
+        } else {
+            // Konum kalitesi eşit: daha eski olanı tut
+            if (haber1.getId().compareTo(haber2.getId()) < 0) {
+                keep = haber1;
+                remove = haber2;
+            } else {
+                keep = haber2;
+                remove = haber1;
+            }
+            reason = "Aynı konum düzeyi (son eklenen silindi)";
+        }
+
+        boolean updated = mergeBetterLocationData(keep, remove);
+        if (updated) {
+            reason += " | Konum/koordinat aktarıldı";
+        }
+
+        return new DedupDecision(keep, remove, reason, updated);
+    }
+
+    private boolean mergeBetterLocationData(Haber keep, Haber remove) {
+        boolean updated = false;
+
+        int keepScore = getSpecificityScore(keep.getKonumMetni());
+        int removeScore = getSpecificityScore(remove.getKonumMetni());
+
+        if ((keep.getKonumMetni() == null || keep.getKonumMetni().isBlank())
+                && remove.getKonumMetni() != null && !remove.getKonumMetni().isBlank()) {
+            keep.setKonumMetni(remove.getKonumMetni());
+            updated = true;
+        } else if (removeScore > keepScore && remove.getKonumMetni() != null && !remove.getKonumMetni().isBlank()) {
+            keep.setKonumMetni(remove.getKonumMetni());
+            updated = true;
+        }
+
+        if (!hasCoordinates(keep) && hasCoordinates(remove)) {
+            keep.setEnlem(remove.getEnlem());
+            keep.setBoylam(remove.getBoylam());
+            updated = true;
+        }
+
+        return updated;
+    }
+
+    private double getLocationQuality(Haber haber) {
+        if (haber == null) {
+            return 0;
+        }
+
+        double base = getSpecificityScore(haber.getKonumMetni());
+
+        if (hasCoordinates(haber)) {
+            base += 500; // Koordinatlı kayıtlar kuvvetle tercih edilir
+        }
+
+        return base;
+    }
+
+    private String normalizeContentForSimilarity(String content) {
+        if (content == null) return "";
+        String cleaned = content.replaceAll("\\s+", " ").trim();
+        int limit = 1200; // Yorum/ilgili haber kalabalığını azaltmak için kısalt
+        return cleaned.length() > limit ? cleaned.substring(0, limit) : cleaned;
+    }
+
+    private boolean hasCoordinates(Haber haber) {
+        return haber != null && haber.getEnlem() != null && haber.getEnlem() != 0
+                && haber.getBoylam() != null && haber.getBoylam() != 0;
+    }
+
+    private record DedupDecision(Haber keep, Haber remove, String reason, boolean updatedKeep) {}
+
+    private void applyDefaultCoordinates(Haber haber) {
+        GeocodingService.LocationCoordinates fallback = geocodingService.getKocaeliLocationCoordinates("İzmit");
+        if (fallback != null && fallback.isValid()) {
+            haber.setKonumMetni("İzmit");
+            haber.setEnlem(fallback.latitude);
+            haber.setBoylam(fallback.longitude);
         }
     }
 }

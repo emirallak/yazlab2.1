@@ -8,6 +8,7 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
+import org.example.yazlab21.util.ContentExtractor;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -91,10 +92,11 @@ public class BizimYakaScraper {
                                     haberZamani = LocalDateTime.now();
                                 }
 
-                                String tamIcerik = detay.select(".article-body, article, .news-content, .post-content, .content").text();
-                                if (tamIcerik.isEmpty()) {
-                                    tamIcerik = ozet;
-                                }
+                                String tamIcerik = ContentExtractor.extractMainText(
+                                        detay,
+                                        Arrays.asList(".article-body", "article .article-body", "article", ".news-content", ".post-content", ".content"),
+                                        ozet
+                                );
 
                                 if (haberZamani.isBefore(ucGunOnce)) {
                                     System.out.println("⏳ [ESKİ HABER ATLANDI] " + baslik);

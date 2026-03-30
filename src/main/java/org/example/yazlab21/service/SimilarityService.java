@@ -78,7 +78,7 @@ public class SimilarityService {
             return "";
         }
         return text.toLowerCase()
-            .replaceAll("[^a-z0-9\\s]", "")
+            .replaceAll("[^a-z0-9ğüşiöç\\s]", " ")
             .replaceAll("\\s+", " ")
             .trim();
     }

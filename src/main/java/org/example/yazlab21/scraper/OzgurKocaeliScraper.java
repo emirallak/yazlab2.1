@@ -12,6 +12,7 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.springframework.stereotype.Service;
+import org.example.yazlab21.util.ContentExtractor;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -120,8 +121,11 @@ public class OzgurKocaeliScraper {
                                     break;
                                 }
 
-                                String tamIcerik = detay.select(".article-body, article, .news-content").text();
-                                if (tamIcerik.isEmpty()) tamIcerik = ozet;
+                                String tamIcerik = ContentExtractor.extractMainText(
+                                        detay,
+                                        Arrays.asList(".article-body", "article .article-body", "article", ".news-content", ".post-content", ".content"),
+                                        ozet
+                                );
 
                                 // VERİTABANINA KAYIT
                                 Haber yeniHaber = Haber.builder()

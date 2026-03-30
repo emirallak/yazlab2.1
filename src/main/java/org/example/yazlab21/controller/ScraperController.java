@@ -25,41 +25,41 @@ public class ScraperController {
     @GetMapping("/bizimyaka")
     public ResponseEntity<String> tetiklebizimYaka() {
         bizimYakaScraper.scrapeBizimYaka();
-        locationProcessorService.processLocationsByCategory("Yangın");
-        locationProcessorService.deduplicateAndKeepMostSpecific(); // ← YENİ BENZERLİK VE SİLME MANTIĞI
-        return ResponseEntity.ok("✅ Bizim Yaka scraping tamamlandı ve konumlar işlendi!");
+        locationProcessorService.processAllNewsLocations(); // Tüm kategoriler için konum/geocode
+        locationProcessorService.deduplicateAndKeepMostSpecific();
+        return ResponseEntity.ok("✅ Bizim Yaka scraping tamamlandı, tüm haberlerin konumu/geocode'u işlendi ve mükerrerler temizlendi!");
     }
 
     @GetMapping("/ozgurkocaeli")
     public ResponseEntity<String> tetikleozgurkocaeli() {
         ozgurKocaeliScraper.scrapeOzgurKocaeli();
-        locationProcessorService.processLocationsByCategory("Yangın");
-        locationProcessorService.deduplicateAndKeepMostSpecific(); // ← YENİ BENZERLİK VE SİLME MANTIĞI
-        return ResponseEntity.ok("✅ Özgür Kocaeli scraping tamamlandı ve konumlar işlendi!");
+        locationProcessorService.processAllNewsLocations();
+        locationProcessorService.deduplicateAndKeepMostSpecific();
+        return ResponseEntity.ok("✅ Özgür Kocaeli scraping tamamlandı, tüm haberlerin konumu/geocode'u işlendi ve mükerrerler temizlendi!");
     }
 
     @GetMapping("/cagdaskocaeli")
     public ResponseEntity<String> tetiklecagdaskocaeli() {
         cagdasKocaeliScraper.scrapeCagdasKocaeli();
-        locationProcessorService.processLocationsByCategory("Yangın");
-        locationProcessorService.deduplicateAndKeepMostSpecific(); // ← YENİ BENZERLİK VE SİLME MANTIĞI
-        return ResponseEntity.ok("✅ Çağdaş Kocaeli scraping tamamlandı ve konumlar işlendi!");
+        locationProcessorService.processAllNewsLocations();
+        locationProcessorService.deduplicateAndKeepMostSpecific();
+        return ResponseEntity.ok("✅ Çağdaş Kocaeli scraping tamamlandı, tüm haberlerin konumu/geocode'u işlendi ve mükerrerler temizlendi!");
     }
 
-    @GetMapping("/seskoaceli")
-    public ResponseEntity<String> tetikleseskoaceli() {
+    @GetMapping("/seskocaeli")
+    public ResponseEntity<String> tetikleseskocaeli() {
         sesKocaeliScraper.scrapeSesKocaeli();
-        locationProcessorService.processLocationsByCategory("Yangın");
-        locationProcessorService.deduplicateAndKeepMostSpecific(); // ← YENİ BENZERLİK VE SİLME MANTIĞI
-        return ResponseEntity.ok("✅ Ses Kocaeli scraping tamamlandı ve konumlar işlendi!");
+        locationProcessorService.processAllNewsLocations();
+        locationProcessorService.deduplicateAndKeepMostSpecific();
+        return ResponseEntity.ok("✅ Ses Kocaeli scraping tamamlandı, tüm haberlerin konumu/geocode'u işlendi ve mükerrerler temizlendi!");
     }
 
     @GetMapping("/yenikocaeli")
     public ResponseEntity<String> tetikleyyenikocaeli() {
         yenikocaeliScraper.scrapeYenikocaeli();
-        locationProcessorService.processLocationsByCategory("Yangın");
-        locationProcessorService.deduplicateAndKeepMostSpecific(); // ← YENİ BENZERLİK VE SİLME MANTIĞI
-        return ResponseEntity.ok("✅ Yeni Kocaeli scraping tamamlandı ve konumlar işlendi!");
+        locationProcessorService.processAllNewsLocations();
+        locationProcessorService.deduplicateAndKeepMostSpecific();
+        return ResponseEntity.ok("✅ Yeni Kocaeli scraping tamamlandı, tüm haberlerin konumu/geocode'u işlendi ve mükerrerler temizlendi!");
     }
 
     @PostMapping("/all-locations")
