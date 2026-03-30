@@ -213,10 +213,6 @@
                 <label for="categorySelect">Kategori Filtrele:</label>
                 <select id="categorySelect">
                     <option value="">Tümü</option>
-                    <option value="Yangın">🔥 Yangın</option>
-                    <option value="Kaza">🚗 Kaza</option>
-                    <option value="Asayiş">👮 Asayiş</option>
-                    <option value="Genel">📰 Genel</option>
                 </select>
             </div>
 
@@ -267,18 +263,12 @@
 
         // Haber konumlarını yükle
         function loadNewsLocations() {
-            const categoryValue = document.getElementById('categorySelect').value;
-            const url = categoryValue
-                ? `/api/locations/category/${categoryValue}`
-                : '/api/locations/all';
-
-            fetch(url)
+            fetch('/api/locations/all')
                 .then(response => response.json())
                 .then(data => {
                     allNews = data;
-                    filteredNews = data;
-                    displayNews();
-                    updateStats();
+                    buildCategoryOptions(allNews);
+                    applyCategoryFilter();
                 })
                 .catch(error => {
                     console.error('Hata:', error);
@@ -287,19 +277,53 @@
                 });
         }
 
+        function buildCategoryOptions(data) {
+            const select = document.getElementById('categorySelect');
+            const current = select.value;
+            const categories = Array.from(new Set(
+                data.map(n => n.kategori).filter(Boolean)
+            )).sort();
+
+            select.innerHTML = '<option value="">Tümü</option>';
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat;
+                opt.textContent = cat;
+                select.appendChild(opt);
+            });
+
+            // Seçim korunmaya çalışılır, yoksa Tümü
+            if (categories.includes(current)) {
+                select.value = current;
+            } else {
+                select.value = '';
+            }
+        }
+
+        function applyCategoryFilter() {
+            const categoryValue = document.getElementById('categorySelect').value;
+            filteredNews = categoryValue
+                ? allNews.filter(n => n.kategori === categoryValue)
+                : allNews;
+            displayNews();
+            updateStats();
+        }
+
         // Haberleri göster
         function displayNews() {
             clearMarkers();
             document.getElementById('newsList').innerHTML = '';
 
+            let shown = 0;
             filteredNews.forEach((news, index) => {
                 if (news.enlem && news.boylam) {
                     addMarker(news, index);
                     addNewsItem(news, index);
+                    shown++;
                 }
             });
 
-            document.getElementById('displayedNews').textContent = filteredNews.length;
+            document.getElementById('displayedNews').textContent = shown;
         }
 
         // Marker ekle
@@ -340,9 +364,11 @@
         function getMarkerColor(category) {
             const colors = {
                 'Yangın': '#FF0000',
-                'Kaza': '#FFA500',
-                'Asayiş': '#FFA500',
-                'Genel': '#0080FF'
+                'Trafik Kazası': '#FFA500',
+                'Hırsızlık': '#8e44ad',
+                'Uyuşturucu': '#2c3e50',
+                'Elektrik Kesintisi': '#2980b9',
+                'Kültürel Etkinlikler': '#16a085'
             };
             return colors[category] || '#0080FF';
         }
@@ -395,7 +421,7 @@
 
         // Kategori filtresi
         document.getElementById('categorySelect').addEventListener('change', () => {
-            loadNewsLocations();
+            applyCategoryFilter();
         });
 
         // Kontrol fonksiyonları

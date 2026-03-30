@@ -3,6 +3,7 @@ package org.example.yazlab21.scraper;
 import lombok.RequiredArgsConstructor;
 import org.example.yazlab21.model.Haber;
 import org.example.yazlab21.repository.HaberRepository;
+import org.example.yazlab21.util.ContentExtractor;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -101,8 +102,11 @@ public class YenikocaeliScraper {
                                     break;
                                 }
 
-                                String tamIcerik = detay.select(".entry-content, .article-content, .post-content").text();
-                                if (tamIcerik.isEmpty()) tamIcerik = ozet;
+                                String tamIcerik = ContentExtractor.extractMainText(
+                                        detay,
+                                        Arrays.asList(".entry-content", ".article-content", ".post-content", "article"),
+                                        ozet
+                                );
 
                                 // VERİTABANINA KAYIT
                                 Haber yeniHaber = Haber.builder()

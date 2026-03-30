@@ -34,49 +34,62 @@ public class GeocodingService {
         }
 
         String foundDistrict = "";
-        String foundDetail = "";
 
-        // 1. Önce Hangi İlçede Olduğunu Bul
+        // 1. Önce Hangi İlçede Olduğunu Kesin Olarak Bul
+        // İlçesi belirtilmeyen ama mahallesi belirtilenler yanlış ilçeye gidebilir.
+        // O yüzden önce tam ilçeyi yakalıyoruz ki API'de ararken kesin o ilçeyi verelim.
         for (String district : KOCAELI_DISTRICTS) {
-            // Tam kelime eşleşmesi aramak daha güvenlidir ama esnek bırakıyoruz
-            if (text.toLowerCase().contains(district.toLowerCase())) {
+            String regex = "(?i)\\b" + district + "\\b"; // Kelime bütünlüğü için regex
+            Matcher m = Pattern.compile(regex).matcher(text);
+            if (m.find()) {
                 foundDistrict = district;
                 break;
             }
         }
 
-        // 2. Özel bilinen büyük mahalleleri manuel yakala (Regex bazen kaçırabilir)
-        String[] bilinenMahalleler = {"Yahya Kaptan", "Yenişehir", "Bekirdere", "Karabaş", "Yenidoğan", "Plajyolu", "Sanayi", "Yuvam Akarca"};
-        for (String mahalle : bilinenMahalleler) {
-            if (text.toLowerCase().contains(mahalle.toLowerCase())) {
-                foundDetail = mahalle + " Mahallesi";
-                break;
+        // Eğer hiç ilçe bulamadıysa ama genel Kocaeli geçiyorsa İzmit (Merkez) varsayımı yapabiliriz veya boş bırakırız.
+
+
+        // 2. Mahalle ve Cadde/Sokak bul
+        java.util.List<String> detailsList = new java.util.ArrayList<>();
+        Pattern locationPattern = Pattern.compile(
+                "([A-Za-z0-9ÇĞİÖŞÜçğıöşü]+(?:\\s+[A-Za-z0-9ÇĞİÖŞÜçğıöşü]+){0,2}\\s+(Mahallesi|Mah\\.|Cadde|Caddesi|Sokak|Sokağı|Mevkii|Mevki|Köyü|Yolu))",
+                Pattern.CASE_INSENSITIVE
+        );
+        Matcher matcher = locationPattern.matcher(text);
+
+        while (matcher.find()) {
+            String match = matcher.group(1).trim();
+            if (!detailsList.contains(match)) {
+                detailsList.add(match);
             }
         }
 
-        // 3. Eğer hala bulamadıysa Regex ile detaylı adres bulmaya çalış
-        if (foundDetail.isEmpty()) {
-            Pattern locationPattern = Pattern.compile(
-                    "([A-Za-zÇĞİÖŞÜçğıöşü]+(?:\\s+[A-Za-zÇĞİÖŞÜçğıöşü]+){0,2}\\s+(Mahallesi|Mah\\.|Cadde|Caddesi|Sokak|Sokağı|Mevkii|Mevki|Köyü|Yolu))",
-                    Pattern.CASE_INSENSITIVE
-            );
-            Matcher matcher = locationPattern.matcher(text);
-
-            if (matcher.find()) {
-                foundDetail = matcher.group(1).trim();
+        if (detailsList.isEmpty()) {
+            // Eğer regex bulamazsa bilinen mahalleleri kontrol et (İlçe bağımsız, riskli olabilir ama şimdilik kalsın)
+            String[] bilinenMahalleler = {"Yahya Kaptan", "Yenişehir", "Bekirdere", "Karabaş", "Yenidoğan", "Plajyolu", "Sanayi", "Yuvam Akarca", "Ovacık", "Yuvacık", "İstasyon"};
+            for (String mahalle : bilinenMahalleler) {
+                if (text.toLowerCase().contains(mahalle.toLowerCase())) {
+                    detailsList.add(mahalle + " Mahallesi");
+                    break;
+                }
             }
         }
 
-        // 4. Bulunanları birleştir
+        String foundDetail = String.join(", ", detailsList);
+
+        // 3. Bulunanları birleştir - İLÇEYİ KESİNLİKLE SONA EKLE
         if (!foundDetail.isEmpty() && !foundDistrict.isEmpty()) {
-            return foundDetail + ", " + foundDistrict;
+            return foundDetail + ", " + foundDistrict; // Örn: İstasyon Mahallesi, Kartepe
         } else if (!foundDetail.isEmpty()) {
-            return foundDetail;
+            // İlçe bulamadıysa ama mahalle bulduysa, İzmit varsayımını ekleyerek geocode şansını yükselt
+            return foundDetail + ", İzmit";
         } else if (!foundDistrict.isEmpty()) {
             return foundDistrict;
         }
 
-        return null;
+        // Hiçbir şey bulunamazsa merkez kabul et
+        return "İzmit";
     }
 
     /**
@@ -91,7 +104,7 @@ public class GeocodingService {
             // API'ye saygılı istek
             Thread.sleep(1000);
 
-            // 1. Deneme: Tam Adres ile Ara (Örn: "Yahya Kaptan Mahallesi, İzmit, Kocaeli")
+            // 1. Deneme: Tam Adres ile Ara. İL, İLÇE zorlaması ekleyerek yanlış ilçe/ile gitmesini önlüyoruz.
             String tamAdres = locationName;
             if (!tamAdres.toLowerCase().contains("kocaeli")) {
                 tamAdres += ", Kocaeli";
@@ -100,23 +113,26 @@ public class GeocodingService {
             LocationCoordinates result = callNominatimAPI(tamAdres, locationName);
             if (result != null) return result;
 
-            // 2. Deneme: Virgülle ayrılmış bir adres ise (Örn "Yahya Kaptan Mahallesi, İzmit")
-            // Sadece Mahalleyi + Kocaeli'yi arat (Bazen ilçe ismi API'nin kafasını karıştırır)
+            // 2. Deneme: Virgülle ayrılmış bir adres ise (Örn "İstasyon Mahallesi, Kartepe")
             if (locationName.contains(",")) {
-                Thread.sleep(1000);
-                String sadeceMahalle = locationName.split(",")[0].trim() + ", Kocaeli";
-                log.info("🔄 Tam adres bulunamadı, genişletilmiş arama deneniyor: {}", sadeceMahalle);
+                String[] parts = locationName.split(",");
+                String detay = parts[0].trim();
+                String ilce = parts.length > 1 ? parts[1].trim() : "";
 
-                result = callNominatimAPI(sadeceMahalle, locationName);
+                Thread.sleep(1000);
+                // "İstasyon Mahallesi, Kartepe, Kocaeli" şeklinde arat.
+                String ilceZorlamaliAdres = detay + (ilce.isEmpty() ? "" : ", " + ilce) + ", Kocaeli";
+                log.info("🔄 Tam adres bulunamadı, genişletilmiş arama deneniyor: {}", ilceZorlamaliAdres);
+
+                result = callNominatimAPI(ilceZorlamaliAdres, locationName);
                 if (result != null) return result;
 
-                // 3. Deneme: 'Mahallesi' vb. kelimeleri atıp arat (Örn: "Yahya Kaptan, Kocaeli")
-                Thread.sleep(1000);
-                String safIsim = locationName.split(",")[0].replaceAll("(?i)Mahallesi|Mah\\.|Sokak|Sokağı|Cadde|Caddesi", "").trim();
-                if (!safIsim.isEmpty()) {
-                    String enSafAdres = safIsim + ", Kocaeli";
-                    log.info("🔄 Son çare arama deneniyor: {}", enSafAdres);
-                    result = callNominatimAPI(enSafAdres, locationName);
+                // 3. Deneme: Sadece İlçe (Detay yanlış girildiyse veya bulamıyorsa ilçeden devam et)
+                if (!ilce.isEmpty()) {
+                    Thread.sleep(1000);
+                    String sadeceIlce = ilce + ", Kocaeli";
+                    log.info("🔄 Detay bulunamadı, sadece ilçeden deneniyor: {}", sadeceIlce);
+                    result = callNominatimAPI(sadeceIlce, locationName);
                     if (result != null) return result;
                 }
             }
@@ -195,7 +211,8 @@ public class GeocodingService {
         if (lowerName.contains("darıca")) return new LocationCoordinates("Darıca", 40.7667, 29.4000, "Darıca, Kocaeli");
         if (lowerName.contains("karamürsel")) return new LocationCoordinates("Karamürsel", 40.6917, 29.6167, "Karamürsel, Kocaeli");
 
-        return null;
+        // En kötü ihtimal merkez İzmit'e düş
+        return new LocationCoordinates("İzmit", 40.7671, 29.9427, "İzmit, Kocaeli");
     }
 
     /**
