@@ -64,7 +64,7 @@ public class SesKocaeliScraper {
                     System.out.println("\n🌍 Ses Kocaeli Taranıyor (Sayfa " + sayfaNumarasi + "): " + url);
 
                     driver.get(url);
-                    Thread.sleep(5000);
+                    Thread.sleep(500);
 
                     Document document = Jsoup.parse(driver.getPageSource());
                     Elements haberKartlari = document.select(".post");
@@ -96,7 +96,7 @@ public class SesKocaeliScraper {
 
                         // SELENIUM İLE HABERİN İÇİNE GİR
                         try {
-                            Thread.sleep(1500);
+                            Thread.sleep(500);
                             driver.get(link);
 
                             Document detay = Jsoup.parse(driver.getPageSource());

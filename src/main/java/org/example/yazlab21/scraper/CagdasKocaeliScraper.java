@@ -64,7 +64,7 @@ public class CagdasKocaeliScraper {
 
                     // SELENIUM İLE LİSTE SAYFASINA GİR (Cloudflare'i geçmek için 5 saniye bekle)
                     driver.get(url);
-                    Thread.sleep(5000);
+                    Thread.sleep(500);
 
                     // Kapı açıldı, sayfanın HTML'ini Jsoup'a ver
                     Document document = Jsoup.parse(driver.getPageSource());
@@ -97,7 +97,7 @@ public class CagdasKocaeliScraper {
 
                         // SELENIUM İLE HABERİN İÇİNE GİR
                         try {
-                            Thread.sleep(1500); // Çok hızlı istek atıp ban yemeyelim
+                            Thread.sleep(500); // Çok hızlı istek atıp ban yemeyelim
                             driver.get(link);
 
                             Document detay = Jsoup.parse(driver.getPageSource());

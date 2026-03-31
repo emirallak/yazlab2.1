@@ -69,7 +69,7 @@ public class BizimYakaScraper {
                         }
 
                         try {
-                            Thread.sleep(1500);
+                            Thread.sleep(500);
 
                             Document detay = Jsoup.connect(link)
                                     .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
@@ -134,7 +134,7 @@ public class BizimYakaScraper {
                     }
 
                     sayfaNumarasi++;
-                    Thread.sleep(3000);
+                    Thread.sleep(500);
 
                 } catch (Exception e) {
                     System.err.println("❌ Sayfa Hata (Sayfa " + sayfaNumarasi + "): " + e.getMessage());
