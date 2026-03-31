@@ -34,46 +34,70 @@ public class GeocodingService {
         }
 
         String foundDistrict = "";
-        String foundDetail = "";
 
         // 1. Önce Hangi İlçede Olduğunu Bul
         for (String district : KOCAELI_DISTRICTS) {
-            // Tam kelime eşleşmesi aramak daha güvenlidir ama esnek bırakıyoruz
-            if (text.toLowerCase().contains(district.toLowerCase())) {
+            // Sadece kelime olarak geçiyorsa al (örn: İzmit)
+            if (text.toLowerCase().matches(".*\\b" + district.toLowerCase() + "\\b.*")) {
                 foundDistrict = district;
                 break;
             }
         }
 
-        // 2. Özel bilinen büyük mahalleleri manuel yakala (Regex bazen kaçırabilir)
+        String mahalle = "";
+        String cadde = "";
+        String sokak = "";
+        String karayolu = "";
+
+        // Özel bilinen büyük mahalleleri manuel yakala
         String[] bilinenMahalleler = {"Yahya Kaptan", "Yenişehir", "Bekirdere", "Karabaş", "Yenidoğan", "Plajyolu", "Sanayi", "Yuvam Akarca"};
-        for (String mahalle : bilinenMahalleler) {
-            if (text.toLowerCase().contains(mahalle.toLowerCase())) {
-                foundDetail = mahalle + " Mahallesi";
+        for (String m : bilinenMahalleler) {
+            if (text.toLowerCase().contains(m.toLowerCase())) {
+                mahalle = m + " Mahallesi";
                 break;
             }
         }
 
-        // 3. Eğer hala bulamadıysa Regex ile detaylı adres bulmaya çalış
-        if (foundDetail.isEmpty()) {
-            Pattern locationPattern = Pattern.compile(
-                    "([A-Za-zÇĞİÖŞÜçğıöşü]+(?:\\s+[A-Za-zÇĞİÖŞÜçğıöşü]+){0,2}\\s+(Mahallesi|Mah\\.|Cadde|Caddesi|Sokak|Sokağı|Mevkii|Mevki|Köyü|Yolu))",
-                    Pattern.CASE_INSENSITIVE
-            );
-            Matcher matcher = locationPattern.matcher(text);
-
-            if (matcher.find()) {
-                foundDetail = matcher.group(1).trim();
-            }
+        // Karayolu, D100 vb. bul
+        Matcher mYol = Pattern.compile("(?i)\\b(D-?100|E-?80|D-?130|Kuzey Marmara Otoyolu|Anadolu Otoyolu|TEM Otoyolu|D100)\\b").matcher(text);
+        if (mYol.find()) {
+            String yol = mYol.group(1).toUpperCase().replace("D100", "D-100");
+            karayolu = yol + " Karayolu";
         }
 
-        // 4. Bulunanları birleştir
-        if (!foundDetail.isEmpty() && !foundDistrict.isEmpty()) {
-            return foundDetail + ", " + foundDistrict;
-        } else if (!foundDetail.isEmpty()) {
-            return foundDetail;
-        } else if (!foundDistrict.isEmpty()) {
-            return foundDistrict;
+        String bulvar = "";
+        // Bulvar, Yol, Kavşak, Meydan, Site (Örn: "Kandıra Yolu", "Turan Güneş Bulvarı", "Sanayi Sitesi")
+        // Kelimelerin en azından ilki büyük harfle başlamalı, ancak son kelime (Yolu vb.) küçük yazılmış olabilir.
+        Matcher mBulvar = Pattern.compile("([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ]*\\s+){1,3}(?i)(Bulvarı|Yolu|Kavşağı|Mevkii|Sitesi|Meydanı)").matcher(text);
+        if (mBulvar.find()) {
+            bulvar = mBulvar.group(0).trim();
+        }
+
+        // Mahalle bul (Sadece Büyük harfle başlayan kelimeleri almasını sağlamak için)
+        // Örn: "Cumhuriyet Mahallesi", "Hacı Hasan Mah."
+        if (mahalle.isEmpty()) {
+            Matcher mMahalle = Pattern.compile("([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ]*\\s+){1,3}(?i)(Mahallesi|Mah\\.)").matcher(text);
+            if (mMahalle.find()) mahalle = mMahalle.group(0).replaceAll("(?i)Mah\\.", "Mahallesi").trim();
+        }
+
+        // Cadde bul
+        Matcher mCadde = Pattern.compile("([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ]*\\s+){1,3}(?i)(Caddesi|Cadde|Cad\\.)").matcher(text);
+        if (mCadde.find()) cadde = mCadde.group(0).replaceAll("(?i)Cad\\.", "Caddesi").trim();
+
+        // Sokak bul
+        Matcher mSokak = Pattern.compile("([A-ZÇĞİÖŞÜ0-9][a-zçğıöşüA-ZÇĞİÖŞÜ0-9]*\\s+){1,3}(?i)(Sokağı|Sokak|Sok\\.)").matcher(text);
+        if (mSokak.find()) sokak = mSokak.group(0).replaceAll("(?i)Sok\\.", "Sokak").trim();
+
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        if (!karayolu.isEmpty()) parts.add(karayolu);
+        if (!sokak.isEmpty()) parts.add(sokak);
+        if (!cadde.isEmpty()) parts.add(cadde);
+        if (!bulvar.isEmpty()) parts.add(bulvar);
+        if (!mahalle.isEmpty()) parts.add(mahalle);
+        if (!foundDistrict.isEmpty()) parts.add(foundDistrict);
+
+        if (!parts.isEmpty()) {
+            return String.join(", ", parts);
         }
 
         return null;
@@ -88,37 +112,51 @@ public class GeocodingService {
         }
 
         try {
-            // API'ye saygılı istek
-            Thread.sleep(1000);
+            // "Sokak, Cadde, Mahalle, İlçe" gibi virgülle ayrılmış bir liste bekliyoruz
+            java.util.List<String> list = new java.util.ArrayList<>(java.util.Arrays.asList(locationName.split(",\\s*")));
 
-            // 1. Deneme: Tam Adres ile Ara (Örn: "Yahya Kaptan Mahallesi, İzmit, Kocaeli")
-            String tamAdres = locationName;
-            if (!tamAdres.toLowerCase().contains("kocaeli")) {
-                tamAdres += ", Kocaeli";
+            // Kocaeli yoksa sonuna ekle
+            if (!list.contains("Kocaeli")) {
+                list.add("Kocaeli");
             }
 
-            LocationCoordinates result = callNominatimAPI(tamAdres, locationName);
-            if (result != null) return result;
+            LocationCoordinates result = null;
 
-            // 2. Deneme: Virgülle ayrılmış bir adres ise (Örn "Yahya Kaptan Mahallesi, İzmit")
-            // Sadece Mahalleyi + Kocaeli'yi arat (Bazen ilçe ismi API'nin kafasını karıştırır)
-            if (locationName.contains(",")) {
+            // 1. AŞAMA: Tam adresi sırayla azaltarak ara
+            java.util.List<String> currentSearchList = new java.util.ArrayList<>(list);
+            while (currentSearchList.size() > 1) { // Sadece Kocaeli kalana kadar
+                String searchQuery = String.join(", ", currentSearchList);
+
                 Thread.sleep(1000);
-                String sadeceMahalle = locationName.split(",")[0].trim() + ", Kocaeli";
-                log.info("🔄 Tam adres bulunamadı, genişletilmiş arama deneniyor: {}", sadeceMahalle);
-
-                result = callNominatimAPI(sadeceMahalle, locationName);
+                log.info("📍 Nominatim Aranıyor (Normal): {}", searchQuery);
+                result = callNominatimAPI(searchQuery, locationName);
                 if (result != null) return result;
 
-                // 3. Deneme: 'Mahallesi' vb. kelimeleri atıp arat (Örn: "Yahya Kaptan, Kocaeli")
-                Thread.sleep(1000);
-                String safIsim = locationName.split(",")[0].replaceAll("(?i)Mahallesi|Mah\\.|Sokak|Sokağı|Cadde|Caddesi", "").trim();
-                if (!safIsim.isEmpty()) {
-                    String enSafAdres = safIsim + ", Kocaeli";
-                    log.info("🔄 Son çare arama deneniyor: {}", enSafAdres);
-                    result = callNominatimAPI(enSafAdres, locationName);
-                    if (result != null) return result;
+                // Bulamadıysa en baştakini (en spesifik olanı) çıkar
+                currentSearchList.remove(0);
+            }
+
+            // 2. AŞAMA: Eğer hiçbirini bulamadıysa, "Mahallesi", "Caddesi", "Sokak" kelimelerini TEMİZLEYİP ara (Nominatim bazen kelime eklendiğinde bulamıyor)
+            currentSearchList = new java.util.ArrayList<>(list);
+            while (currentSearchList.size() > 1) {
+                // Her elemanın içindeki ek kelimeleri çıkar (Örn: "Cumhuriyet Mahallesi" -> "Cumhuriyet")
+                java.util.List<String> cleanedList = new java.util.ArrayList<>();
+                for (String part : currentSearchList) {
+                    if (part.equals("Kocaeli") || KOCAELI_DISTRICTS_CONTAINS(part)) {
+                        cleanedList.add(part);
+                    } else {
+                        String clean = part.replaceAll("(?i)\\s+(Mahallesi|Cadde|Caddesi|Sokak|Sokağı|Karayolu|Bulvarı|Yolu|Kavşağı|Mevkii|Sitesi|Meydanı)", "").trim();
+                        cleanedList.add(clean);
+                    }
                 }
+
+                String searchQueryCleaned = String.join(", ", cleanedList);
+                Thread.sleep(1000);
+                log.info("📍 Nominatim Aranıyor (Temizlenmiş): {}", searchQueryCleaned);
+                result = callNominatimAPI(searchQueryCleaned, locationName);
+                if (result != null) return result;
+
+                currentSearchList.remove(0);
             }
 
             // Hiçbiri bulamazsa yedek sisteme düş
@@ -129,6 +167,16 @@ public class GeocodingService {
             log.error("Geocoding API hatası: {}", e.getMessage());
             return getFallbackCoordinates(locationName);
         }
+    }
+
+    /**
+     * İlçe listesinde olup olmadığını kontrol eden yardımcı metod
+     */
+    private boolean KOCAELI_DISTRICTS_CONTAINS(String district) {
+        for (String d : KOCAELI_DISTRICTS) {
+            if (d.equalsIgnoreCase(district)) return true;
+        }
+        return false;
     }
 
     /**

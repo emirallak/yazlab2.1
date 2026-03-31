@@ -79,7 +79,7 @@ public class YenikocaeliScraper {
 
                         // 3. HABERİN İÇİNE GİR VE TARİHİ AL
                         try {
-                            Thread.sleep(1000); // Jsoup çok hızlıdır, ban yememek için 1 saniye bekle
+                            Thread.sleep(500); // Jsoup çok hızlıdır, ban yememek için 1 saniye bekle
                             Document detay = Jsoup.connect(link).userAgent("Mozilla/5.0").timeout(20000).get();
 
                             // WordPress sitelerinde tarih genelde article:published_time meta etiketindedir
