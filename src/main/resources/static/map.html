@@ -3,11 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kocaeli Haber Konumları - OpenStreetMap</title>
+    <title>Kocaeli Haber Konumları - Google Maps</title>
 
-    <!-- Leaflet.js CSS (OpenStreetMap) -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" />
-    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
 
     <style>
         * {
@@ -27,7 +24,7 @@
         }
 
         .sidebar {
-            width: 300px;
+            width: 350px;
             background-color: #fff;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
             overflow-y: auto;
@@ -49,7 +46,7 @@
             color: #333;
             margin-bottom: 20px;
             font-size: 18px;
-            border-bottom: 2px solid #2ecc71;
+            border-bottom: 2px solid #4285F4;
             padding-bottom: 10px;
         }
 
@@ -71,32 +68,35 @@
             border-radius: 4px;
             font-size: 14px;
             background-color: #f9f9f9;
+            cursor: pointer;
         }
 
         .news-list {
             list-style: none;
+            max-height: calc(100vh - 300px);
+            overflow-y: auto;
         }
 
         .news-item {
             background-color: #f9f9f9;
             padding: 12px;
             margin-bottom: 10px;
-            border-left: 4px solid #2ecc71;
+            border-left: 4px solid #4285F4;
             cursor: pointer;
             border-radius: 4px;
             transition: all 0.3s ease;
         }
 
         .news-item:hover {
-            background-color: #e8f8f5;
-            border-left-color: #27ae60;
+            background-color: #e3f2fd;
+            border-left-color: #1e88e5;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
         .news-item.active {
-            background-color: #2ecc71;
+            background-color: #4285F4;
             color: white;
-            border-left-color: #27ae60;
+            border-left-color: #1e88e5;
         }
 
         .news-item-title {
@@ -138,14 +138,15 @@
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
             z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
         .controls button {
             display: block;
-            width: 100%;
-            padding: 10px;
-            margin: 5px 0;
-            background-color: #2ecc71;
+            padding: 10px 12px;
+            background-color: #4285F4;
             color: white;
             border: none;
             border-radius: 4px;
@@ -153,10 +154,11 @@
             font-weight: 600;
             transition: background-color 0.3s ease;
             min-width: 100px;
+            font-size: 13px;
         }
 
         .controls button:hover {
-            background-color: #27ae60;
+            background-color: #1e88e5;
         }
 
         .stats {
@@ -238,25 +240,69 @@
     </div>
 
     <script>
+        // Google Maps API'sını dinamik olarak yükle
+        async function loadGoogleMapsAPI() {
+            try {
+                const response = await fetch('/api/config/maps-api-key');
+                const config = await response.json();
+
+                if (!config.apiKey || config.apiKey === 'YOUR_GOOGLE_API_KEY_HERE') {
+                    throw new Error('Google Maps API Key ayarlanmamış');
+                }
+
+                const script = document.createElement('script');
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${config.apiKey}&libraries=places,marker`;
+                script.async = true;
+                script.defer = true;
+                script.onload = () => {
+                    // API yüklenince haritayı başlat
+                    initMap();
+                };
+                script.onerror = () => {
+                    document.getElementById('newsList').innerHTML =
+                        '<div class="error">❌ Google Maps API yüklenemedi</div>';
+                };
+                document.head.appendChild(script);
+            } catch (error) {
+                console.error('API Key yüklenemedi:', error);
+                document.getElementById('newsList').innerHTML =
+                    '<div class="error">❌ Google Maps API Key ayarlanmalı. Lütfen application.properties dosyasını kontrol edin.</div>';
+            }
+        }
+
         let map;
         let markers = [];
+        let infoWindows = [];
         let allNews = [];
         let filteredNews = [];
+        let visibleMarkers = [];
+
+        // Kategori renkleri ve marker simgeleri
+        const categoryColors = {
+            'Yangın': { color: '#FF0000', emoji: '🔥' },
+            'Trafik Kazası': { color: '#FFA500', emoji: '🚗' },
+            'Hırsızlık': { color: '#8e44ad', emoji: '🚨' },
+            'Uyuşturucu': { color: '#2c3e50', emoji: '⚠️' },
+            'Elektrik Kesintisi': { color: '#2980b9', emoji: '⚡' },
+            'Kültürel Etkinlikler': { color: '#16a085', emoji: '🎭' },
+            'Suç': { color: '#e74c3c', emoji: '🔒' },
+            'İlaç': { color: '#27ae60', emoji: '💊' },
+            'Sosyal Olaylar': { color: '#f39c12', emoji: '👥' }
+        };
 
         // Harita başlatma
         function initMap() {
             const kocaeliCenter = { lat: 40.7671, lng: 29.9427 };
 
-            map = new L.Map('map', {
-                center: [kocaeliCenter.lat, kocaeliCenter.lng],
-                zoom: 10
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 10,
+                center: kocaeliCenter,
+                mapTypeControl: true,
+                fullscreenControl: true,
+                streetViewControl: true,
+                zoomControl: true,
+                gestureHandling: 'auto'
             });
-
-            // OpenStreetMap tiles ekle
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors',
-                maxZoom: 19
-            }).addTo(map);
 
             loadNewsLocations();
         }
@@ -292,7 +338,6 @@
                 select.appendChild(opt);
             });
 
-            // Seçim korunmaya çalışılır, yoksa Tümü
             if (categories.includes(current)) {
                 select.value = current;
             } else {
@@ -328,66 +373,83 @@
 
         // Marker ekle
         function addMarker(news, index) {
-            const position = [news.enlem, news.boylam];
-            const markerColor = getMarkerColor(news.kategori);
+            const position = { lat: parseFloat(news.enlem), lng: parseFloat(news.boylam) };
+            const categoryData = categoryColors[news.kategori] || { color: '#4285F4', emoji: '📍' };
 
-            const marker = L.circleMarker(position, {
-                radius: 8,
-                fillColor: markerColor,
-                color: '#fff',
-                weight: 2,
-                opacity: 1,
-                fillOpacity: 0.8
-            }).addTo(map);
+            // Dairesel marker oluştur
+            const svgMarker = {
+                path: google.maps.SymbolPath.CIRCLE,
+                fillColor: categoryData.color,
+                fillOpacity: 0.9,
+                strokeColor: '#fff',
+                strokeWeight: 2,
+                scale: 8
+            };
 
-            marker.bindPopup(`
-                <div style="font-size: 12px; max-width: 250px;">
-                    <strong style="color: ${markerColor};">${index + 1}. ${news.kategori}</strong>
-                    <h3 style="margin: 5px 0; font-size: 13px;">${news.baslik}</h3>
-                    <p style="margin: 5px 0;"><strong>📍</strong> ${news.konumMetni}</p>
-                    <p style="margin: 5px 0; color: #666; font-size: 11px;">${news.icerik.substring(0, 80)}...</p>
-                    <p style="margin: 5px 0; color: #999; font-size: 10px;">${news.yayinTarihi}</p>
-                    <a href="${news.link}" target="_blank" style="color: ${markerColor};">🔗 Haberi Oku</a>
+            const marker = new google.maps.Marker({
+                position: position,
+                map: map,
+                title: news.baslik.substring(0, 50),
+                icon: svgMarker,
+                animation: google.maps.Animation.DROP
+            });
+
+            // Info Window oluştur
+            const infoContent = `
+                <div style="font-family: Arial; max-width: 300px; padding: 5px;">
+                    <div style="font-size: 12px; margin-bottom: 5px;">
+                        <strong style="color: ${categoryData.color};">${categoryData.emoji} ${news.kategori}</strong>
+                        <span style="background-color: #e0e0e0; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-left: 5px;">#${index + 1}</span>
+                    </div>
+                    <h3 style="margin: 5px 0; font-size: 14px; color: #333;">${news.baslik}</h3>
+                    <p style="margin: 5px 0; font-size: 12px;"><strong>📍</strong> ${news.konumMetni}</p>
+                    <p style="margin: 5px 0; color: #666; font-size: 11px; line-height: 1.4;">${news.icerik.substring(0, 100)}...</p>
+                    <p style="margin: 5px 0; color: #999; font-size: 10px;">📅 ${news.yayinTarihi}</p>
+                    <a href="${news.link}" target="_blank" style="color: ${categoryData.color}; text-decoration: none; font-weight: bold;">🔗 Haberi Oku &rarr;</a>
                 </div>
-            `);
+            `;
 
-            marker.on('click', () => {
+            const infoWindow = new google.maps.InfoWindow({
+                content: infoContent
+            });
+
+            infoWindows.push(infoWindow);
+
+            marker.addListener('click', () => {
+                // Tüm info window'ları kapat
+                infoWindows.forEach(iw => iw.close());
+                // Seçili window'ı aç
+                infoWindow.open(map, marker);
+                // Haberi vurgula
                 highlightNewsItem(index);
-                map.setView(position, 13);
-                marker.openPopup();
+                // Haritayı konuma zum et
+                map.setCenter(position);
+                map.setZoom(14);
             });
 
             markers.push(marker);
-        }
-
-        // Kategori rengine göre marker rengi
-        function getMarkerColor(category) {
-            const colors = {
-                'Yangın': '#FF0000',
-                'Trafik Kazası': '#FFA500',
-                'Hırsızlık': '#8e44ad',
-                'Uyuşturucu': '#2c3e50',
-                'Elektrik Kesintisi': '#2980b9',
-                'Kültürel Etkinlikler': '#16a085'
-            };
-            return colors[category] || '#0080FF';
+            visibleMarkers.push(marker);
         }
 
         // Haber listesine ekle
         function addNewsItem(news, index) {
             const item = document.createElement('div');
             item.className = 'news-item';
+            const categoryData = categoryColors[news.kategori] || { emoji: '📍' };
+
             item.innerHTML = `
-                <div class="news-item-title">${index + 1}. ${news.baslik.substring(0, 35)}...</div>
-                <div class="news-item-location">📍 ${news.konumMetni}</div>
+                <div class="news-item-title">${categoryData.emoji} ${news.baslik.substring(0, 40)}...</div>
+                <div class="news-item-location">📍 ${news.konumMetni.substring(0, 40)}</div>
                 <div class="news-item-date">${news.yayinTarihi}</div>
             `;
 
             item.addEventListener('click', () => {
                 highlightNewsItem(index);
-                map.setView([news.enlem, news.boylam], 13);
+                const markerPos = { lat: parseFloat(news.enlem), lng: parseFloat(news.boylam) };
+                map.setCenter(markerPos);
+                map.setZoom(14);
                 if (markers[index]) {
-                    markers[index].openPopup();
+                    google.maps.event.trigger(markers[index], 'click');
                 }
             });
 
@@ -407,8 +469,11 @@
 
         // Marker'ları temizle
         function clearMarkers() {
-            markers.forEach(marker => map.removeLayer(marker));
+            markers.forEach(marker => marker.setMap(null));
+            infoWindows.forEach(iw => iw.close());
             markers = [];
+            infoWindows = [];
+            visibleMarkers = [];
         }
 
         // İstatistikleri güncelle
@@ -426,22 +491,26 @@
 
         // Kontrol fonksiyonları
         function refreshMap() {
+            clearMarkers();
             loadNewsLocations();
         }
 
         function zoomToKocaeli() {
-            map.setView([40.7671, 29.9427], 10);
+            map.setCenter({ lat: 40.7671, lng: 29.9427 });
+            map.setZoom(10);
         }
 
         function resetMap() {
             clearMarkers();
             document.getElementById('newsList').innerHTML = '';
             loadNewsLocations();
+            zoomToKocaeli();
         }
 
         // Harita başlat
-        window.addEventListener('load', () => {
-            initMap();
+        // Sayfa yüklenince Google Maps API'sını yükle
+        document.addEventListener('DOMContentLoaded', () => {
+            loadGoogleMapsAPI();
         });
     </script>
 </body>

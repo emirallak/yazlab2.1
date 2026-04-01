@@ -36,7 +36,7 @@ public class HaberController {
 
     // İşte HTML'deki butonun tetiklediği o meşhur endpoint!
     @PostMapping("/scrape-tetikle")
-    public ResponseEntity<String> scraperTetikle() {
+    public ResponseEntity<String> scraperTetikle(@RequestParam(defaultValue = "3") int days) {
         try {
             System.out.println("🚀 =============================================== 🚀");
             System.out.println("🤖 HABER BOTLARI MANUEL OLARAK ATEŞLENDİ!");
@@ -45,19 +45,19 @@ public class HaberController {
             // Botlar sırayla çalışır. Biri bitmeden diğeri başlamaz (Senkron).
 
             System.out.println("\n--- 1. YENİ KOCAELİ BAŞLIYOR ---");
-            yenikocaeliScraper.scrapeYenikocaeli();
+            yenikocaeliScraper.scrapeYenikocaeli(days);
 
             System.out.println("\n--- 2. BİZİM YAKA BAŞLIYOR ---");
-            bizimYakaScraper.scrapeBizimYaka();
+            bizimYakaScraper.scrapeBizimYaka(days);
 
             System.out.println("\n--- 3. ÖZGÜR KOCAELİ BAŞLIYOR ---");
-            ozgurKocaeliScraper.scrapeOzgurKocaeli();
+            ozgurKocaeliScraper.scrapeOzgurKocaeli(days);
 
             System.out.println("\n--- 4. ÇAĞDAŞ KOCAELİ BAŞLIYOR ---");
-            cagdasKocaeliScraper.scrapeCagdasKocaeli();
+            cagdasKocaeliScraper.scrapeCagdasKocaeli(days);
 
             System.out.println("\n--- 5. SES KOCAELİ BAŞLIYOR ---");
-            sesKocaeliScraper.scrapeSesKocaeli();
+            sesKocaeliScraper.scrapeSesKocaeli(days);
 
             System.out.println("\n✅ TÜM SİTELER BAŞARIYLA TARANDI VE VERİTABANINA KAYDEDİLDİ!");
             
