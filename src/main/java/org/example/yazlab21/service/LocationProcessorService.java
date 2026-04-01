@@ -6,7 +6,7 @@ import org.example.yazlab21.repository.HaberRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -19,145 +19,186 @@ public class LocationProcessorService {
 
     private static final double SIMILARITY_THRESHOLD = 0.90;
 
-    public LocationProcessorService(GeocodingService geocodingService, SimilarityService similarityService, HaberRepository haberRepository) {
+    public LocationProcessorService(GeocodingService geocodingService,
+                                    SimilarityService similarityService,
+                                    HaberRepository haberRepository) {
         this.geocodingService = geocodingService;
         this.similarityService = similarityService;
         this.haberRepository = haberRepository;
     }
 
+    /**
+     * Tek bir haberin konum bilgisini işler.
+     *
+     * Akış:
+     *  1. Başlık + içerik üzerinde extractAndGeocodeAll() ile TÜM konumlar çıkarılır.
+     *  2. Benzer haberlerden daha spesifik konum varsa önceliklendirilir.
+     *  3. Geçerli koordinat bulunan ilk (en spesifik) konum habere yazılır.
+     *  4. Hiç koordinat bulunamazsa haber enlem/boylam OLMADAN kaydedilir
+     *     → haritada gösterilmez (fallback İzmit KALDIRILDI).
+     */
     public Haber processLocationForNews(Haber haber) {
-        if (haber == null) {
-            return null;
-        }
+        if (haber == null) return null;
 
         try {
-            String konumMetni = geocodingService.extractLocationFromText(
-                    haber.getBaslik() + " " + haber.getIcerik()
-            );
+            String aramaMetni = buildSearchText(haber);
 
-            if (konumMetni == null || konumMetni.isEmpty()) {
-                konumMetni = "İzmit"; // Merkez varsayımı
+            // YENİ: Tüm konumları geocoding ile birlikte getir
+            List<GeocodingService.LocationCoordinates> tumKonumlar =
+                    geocodingService.extractAndGeocodeAll(aramaMetni);
+
+            if (tumKonumlar.isEmpty()) {
+                log.warn("⚠️  Konum bulunamadı, haber haritada gösterilmeyecek: '{}'", haber.getBaslik());
+                // Enlem/boylam sıfırlanır → haritada gizlenir
+                clearCoordinates(haber);
+                haber.setKonumMetni(null);
+                return haber;
             }
 
-            haber.setKonumMetni(konumMetni);
-            log.info("Haberden konum çıkarıldı: {} - {}", haber.getBaslik(), konumMetni);
+            // Benzer haberlerin konumlarıyla en spesifik olanı seç
+            GeocodingService.LocationCoordinates secilenKonum =
+                    findMostSpecificCoordinate(haber, tumKonumlar);
 
-            String finalLocation = findMostSpecificLocationForSimilarNews(haber);
+            // Habere yaz
+            haber.setKonumMetni(secilenKonum.locationName);
+            haber.setEnlem(secilenKonum.latitude);
+            haber.setBoylam(secilenKonum.longitude);
 
-            if (finalLocation != null && !finalLocation.isBlank()) {
-                GeocodingService.LocationCoordinates coords =
-                        geocodingService.getKocaeliLocationCoordinates(finalLocation);
+            log.info("📍 Konum atandı: '{}' → {} ({}, {})",
+                    haber.getBaslik(), secilenKonum.locationName,
+                    secilenKonum.latitude, secilenKonum.longitude);
 
-                if (coords != null && coords.isValid()) {
-                    haber.setEnlem(coords.latitude);
-                    haber.setBoylam(coords.longitude);
-                    haber.setKonumMetni(finalLocation);
-
-                    log.info("Konum geocoded: {} => ({}, {})",
-                            finalLocation, coords.latitude, coords.longitude);
-                } else {
-                    log.warn("Geocode başarısız, varsayılan merkez uygulanacak: {}", finalLocation);
-                    applyDefaultCoordinates(haber);
-                }
-            } else {
-                applyDefaultCoordinates(haber);
-            }
         } catch (Exception e) {
-            log.error("Konum işlemesi sırasında hata: {}", e.getMessage(), e);
+            log.error("❌ Konum işlemesi hatası '{}': {}", haber.getBaslik(), e.getMessage(), e);
         }
 
         return haber;
     }
 
-    public String findMostSpecificLocationForSimilarNews(Haber haber) {
-        try {
-            List<Haber> allNews = haberRepository.findByHaberTuru(haber.getHaberTuru());
-
-            List<Haber> similarNews = allNews.stream()
-                    .filter(h -> !h.getId().equals(haber.getId()))
-                    .filter(h -> similarityService.calculateNewsItemSimilarity(
-                            haber.getBaslik(), h.getBaslik()) >= SIMILARITY_THRESHOLD
-                    )
-                    .collect(Collectors.toList());
-
-            if (similarNews.isEmpty()) {
-                return haber.getKonumMetni();
-            }
-
-            List<String> allLocations = similarNews.stream()
-                    .map(Haber::getKonumMetni)
-                    .filter(loc -> loc != null && !loc.isEmpty())
-                    .collect(Collectors.toList());
-
-            if (haber.getKonumMetni() != null && !haber.getKonumMetni().isEmpty()) {
-                allLocations.add(haber.getKonumMetni());
-            }
-
-            if (!allLocations.isEmpty()) {
-                String mostSpecific = similarityService.findMostSpecificLocation(allLocations);
-                log.info("Benzer {} haberden en spesifik konum seçildi: {}",
-                        similarNews.size(), mostSpecific);
-                return mostSpecific;
-            }
-
-        } catch (Exception e) {
-            log.error("Benzer haber aranırken hata: {}", e.getMessage(), e);
-        }
-
-        return haber.getKonumMetni();
+    /**
+     * Arama metnini oluşturur. Başlık iki kez eklenir çünkü
+     * başlıkta geçen konum adı genellikle daha güvenilirdir ve
+     * regex eşleşme olasılığını artırır.
+     */
+    private String buildSearchText(Haber haber) {
+        String baslik = haber.getBaslik() != null ? haber.getBaslik() : "";
+        String icerik = haber.getIcerik() != null ? haber.getIcerik() : "";
+        // Başlığı öne al ve iki kez geçir → ağırlık kazansın
+        return baslik + " " + baslik + " " + icerik;
     }
 
-    public void processAllNewsLocations() {
-        log.info("Tüm haberlerin konumları ZORUNLU olarak yeniden işlenmeye başlandı...");
+    /**
+     * Mevcut haberden çıkarılan koordinat listesi + benzer haberlerin
+     * konumlarını birleştirerek en spesifik olanı seçer.
+     */
+    private GeocodingService.LocationCoordinates findMostSpecificCoordinate(
+            Haber haber,
+            List<GeocodingService.LocationCoordinates> mevcutKonumlar) {
+
         try {
-            List<Haber> allNews = haberRepository.findAll();
-            int processed = 0;
-            for (Haber haber : allNews) {
-                // ARTIK ESKİ KOORDİNATI OLSA BİLE YENİDEN İŞLEYECEK (Force Update)
-                // Haber zaten kayıtlı, sadece konumunu güncelleyip üstüne yazacağız
-                Haber processedHaber = processLocationForNews(haber);
-                if (processedHaber != null) {
-                    haberRepository.save(processedHaber);
-                    processed++;
+            // Benzer haberlerin konum metinlerini topla
+            List<Haber> benzerHaberler = haberRepository.findByHaberTuru(haber.getHaberTuru())
+                    .stream()
+                    .filter(h -> h.getId() != null && !h.getId().equals(haber.getId()))
+                    .filter(h -> h.getKonumMetni() != null && !h.getKonumMetni().isBlank())
+                    .filter(h -> similarityService.calculateNewsItemSimilarity(
+                            haber.getBaslik(), h.getBaslik()) >= SIMILARITY_THRESHOLD)
+                    .collect(Collectors.toList());
+
+            if (!benzerHaberler.isEmpty()) {
+                // Benzer haberlerden koordinatı olan ve spesifik olanı bul
+                Optional<GeocodingService.LocationCoordinates> benzerKonum = benzerHaberler.stream()
+                        .filter(h -> hasCoordinates(h))
+                        .map(h -> new GeocodingService.LocationCoordinates(
+                                h.getKonumMetni(), h.getEnlem(), h.getBoylam(), h.getKonumMetni()))
+                        .max(Comparator.comparingInt(k -> getSpecificityScore(k.locationName)));
+
+                if (benzerKonum.isPresent()) {
+                    int benzerScore = getSpecificityScore(benzerKonum.get().locationName);
+                    int mevcutBest = mevcutKonumlar.stream()
+                            .mapToInt(k -> getSpecificityScore(k.locationName))
+                            .max().orElse(0);
+
+                    if (benzerScore > mevcutBest) {
+                        log.info("🔗 Benzer haberden daha spesifik konum alındı: '{}'",
+                                benzerKonum.get().locationName);
+                        return benzerKonum.get();
+                    }
                 }
             }
-            log.info("Konum işlemesi tamamlandı. Toplam {} haber yeni API ile güncellendi.", processed);
         } catch (Exception e) {
-            log.error("Toplu konum işlemesi sırasında hata: {}", e.getMessage(), e);
+            log.warn("Benzer haber konumu aramasında hata: {}", e.getMessage());
+        }
+
+        // Mevcut konumlardan en spesifik olanı döndür
+        return mevcutKonumlar.stream()
+                .max(Comparator.comparingInt(k -> getSpecificityScore(k.locationName)))
+                .orElse(mevcutKonumlar.get(0));
+    }
+
+    /**
+     * Tüm haberlerin konum bilgisini yeniden işler (force update).
+     */
+    public void processAllNewsLocations() {
+        log.info("🔄 Tüm haberlerin konumları yeniden işleniyor...");
+        try {
+            List<Haber> allNews = haberRepository.findAll();
+            int processed = 0, skipped = 0;
+
+            for (Haber haber : allNews) {
+                Haber result = processLocationForNews(haber);
+                if (result != null) {
+                    haberRepository.save(result);
+                    if (hasCoordinates(result)) processed++;
+                    else skipped++;
+                }
+            }
+
+            log.info("✅ Konum işlemesi bitti. Koordinat atanan: {}, Konum bulunamayan: {}",
+                    processed, skipped);
+        } catch (Exception e) {
+            log.error("Toplu konum işlemesi hatası: {}", e.getMessage(), e);
         }
     }
 
+    /**
+     * Sadece koordinatsız haberleri işler (kategori bazlı).
+     */
     public void processLocationsByCategory(String haberTuru) {
-        log.info("'{}' kategorisinin haberleri işlenmeye başlandı...", haberTuru);
+        log.info("📂 '{}' kategorisi işleniyor...", haberTuru);
         try {
             List<Haber> categoryNews = haberRepository.findByHaberTuru(haberTuru);
             int processed = 0;
-            for (Haber haber : categoryNews) {
-                if ((haber.getEnlem() == null || haber.getEnlem() == 0) &&
-                        (haber.getBoylam() == null || haber.getBoylam() == 0)) {
 
-                    Haber processedHaber = processLocationForNews(haber);
-                    haberRepository.save(processedHaber);
-                    processed++;
+            for (Haber haber : categoryNews) {
+                if (!hasCoordinates(haber)) {
+                    Haber result = processLocationForNews(haber);
+                    if (result != null) {
+                        haberRepository.save(result);
+                        if (hasCoordinates(result)) processed++;
+                    }
                 }
             }
-            log.info("'{}' kategorisinin konum işlemesi tamamlandı. {} haber işlendi.", haberTuru, processed);
+
+            log.info("'{}' kategorisi tamamlandı. Koordinat atanan: {} haber.", haberTuru, processed);
         } catch (Exception e) {
-            log.error("Kategori konum işlemesi sırasında hata: {}", e.getMessage(), e);
+            log.error("Kategori konum işlemesi hatası: {}", e.getMessage(), e);
         }
     }
 
+    // ─── Sorgulama Metotları ────────────────────────────────────────────────
+
+    /** Sadece koordinatı olan haberleri döndürür (harita için). */
     public List<Haber> getNewsWithLocations() {
         return haberRepository.findAll().stream()
-                .filter(h -> h.getEnlem() != null && h.getEnlem() != 0
-                        && h.getBoylam() != null && h.getBoylam() != 0)
+                .filter(this::hasCoordinates)
                 .collect(Collectors.toList());
     }
 
+    /** Kategori + koordinat filtreli liste. */
     public List<Haber> getNewsWithLocationsByCategory(String haberTuru) {
         return haberRepository.findByHaberTuru(haberTuru).stream()
-                .filter(h -> h.getEnlem() != null && h.getEnlem() != 0
-                        && h.getBoylam() != null && h.getBoylam() != 0)
+                .filter(this::hasCoordinates)
                 .collect(Collectors.toList());
     }
 
@@ -173,23 +214,36 @@ public class LocationProcessorService {
         return similarityService.calculateSimilarity(title1, title2);
     }
 
+    // ─── Spesifiklik Skoru ──────────────────────────────────────────────────
+
+    /**
+     * Konum metninin ne kadar spesifik olduğunu puanlar.
+     * Yüksek puan = daha spesifik = tercih edilir.
+     *
+     * Mahalle/Sokak/Cadde > Bulvar/Yol > İlçe/Merkez
+     */
     public int getSpecificityScore(String location) {
         if (location == null || location.trim().isEmpty()) return 0;
         int score = 0;
-        String locLower = location.toLowerCase();
+        String loc = location.toLowerCase();
 
-        if (locLower.contains("mahalle") || locLower.contains("mah.")) score += 100;
-        if (locLower.contains("sokak") || locLower.contains("sok.")) score += 100;
-        if (locLower.contains("cadde") || locLower.contains("cad.")) score += 100;
-        if (locLower.contains("bulvar")) score += 100;
-        if (locLower.contains("mevki")) score += 50;
-        if (locLower.contains("yolu") || locLower.contains("yol")) score += 50;
-        if (locLower.contains("ilçe") || locLower.contains("merkez")) score += 20;
+        if (loc.contains("mahalle") || loc.contains("mah."))  score += 100;
+        if (loc.contains("sokak")   || loc.contains("sok."))  score += 100;
+        if (loc.contains("cadde")   || loc.contains("cad."))  score += 100;
+        if (loc.contains("bulvar"))                            score += 80;
+        if (loc.contains("sanayi"))                            score += 70;
+        if (loc.contains("mevki"))                             score += 60;
+        if (loc.contains("yolu")    || loc.contains("yol"))   score += 50;
+        if (loc.contains("köy"))                               score += 40;
+        if (loc.contains("ilçe")    || loc.contains("merkez"))score += 20;
 
+        // Uzun isimler genelde daha spesifiktir
         score += location.length();
 
         return score;
     }
+
+    // ─── Deduplication ──────────────────────────────────────────────────────
 
     @Scheduled(cron = "0 0 * * * *")
     public void scheduledDeduplication() {
@@ -200,10 +254,10 @@ public class LocationProcessorService {
     public void deduplicateAndKeepMostSpecific() {
         try {
             List<Haber> allNews = haberRepository.findAll();
-            java.util.Set<String> toDeleteIds = new java.util.HashSet<>();
+            Set<String> toDeleteIds = new HashSet<>();
             int removedCount = 0;
 
-            log.info("🔍 Farklı sitelerdeki benzer haberler analiz ediliyor...");
+            log.info("🔍 Benzer haberler analiz ediliyor ({} haber)...", allNews.size());
 
             for (int i = 0; i < allNews.size(); i++) {
                 Haber haber1 = allNews.get(i);
@@ -213,73 +267,41 @@ public class LocationProcessorService {
                     Haber haber2 = allNews.get(j);
                     if (toDeleteIds.contains(haber2.getId())) continue;
 
-                    if (haber1.getHaberTuru() == null || !haber1.getHaberTuru().equals(haber2.getHaberTuru())) {
-                        continue;
-                    }
+                    // Farklı kategorideki haberler karşılaştırılmaz
+                    if (haber1.getHaberTuru() == null ||
+                            !haber1.getHaberTuru().equals(haber2.getHaberTuru())) continue;
 
-                    String b1 = haber1.getBaslik().toLowerCase().replaceAll("[^a-zğüşıöç0-9]", " ").replaceAll("\\s+", " ").trim();
-                    String b2 = haber2.getBaslik().toLowerCase().replaceAll("[^a-zğüşıöç0-9]", " ").replaceAll("\\s+", " ").trim();
+                    String b1 = normalize(haber1.getBaslik());
+                    String b2 = normalize(haber2.getBaslik());
 
-                    // Hem Levenshtein hem Cosine (kelime bazlı) benzerlik hesaplıyoruz
-                    double titleLevenshtein = similarityService.calculateSimilarity(haber1.getBaslik(), haber2.getBaslik());
-                    double titleCosine = similarityService.calculateCosineSimilarity(haber1.getBaslik(), haber2.getBaslik());
-                    
+                    double titleLevenshtein = similarityService.calculateSimilarity(
+                            haber1.getBaslik(), haber2.getBaslik());
+                    double titleCosine = similarityService.calculateCosineSimilarity(
+                            haber1.getBaslik(), haber2.getBaslik());
                     double contentSimilarity = similarityService.calculateSimilarity(
-                            normalizeContentForSimilarity(haber1.getIcerik()),
-                            normalizeContentForSimilarity(haber2.getIcerik()));
+                            normalizeContent(haber1.getIcerik()),
+                            normalizeContent(haber2.getIcerik()));
 
-                    boolean isSameEvent = false;
+                    boolean isSameEvent =
+                            titleCosine >= 0.50 ||
+                                    titleLevenshtein >= 0.50 ||
+                                    (titleCosine >= 0.40 && contentSimilarity >= 0.40) ||
+                                    (b1.length() > 5 && b2.length() > 5 && (b1.contains(b2) || b2.contains(b1)));
 
-                    // 1. Genel Metin veya Kelime Kesişimi
-                    // Cosine similarity kelime sırasından bağımsız olarak benzerliği ölçtüğü için aynı haberi yakalamada çok daha iyidir.
-                    if (titleCosine >= 0.50 || titleLevenshtein >= 0.50 || (titleCosine >= 0.40 && contentSimilarity >= 0.40)) {
-                        isSameEvent = true;
-                    }
-
-                    // 2. Alt Küme Başlık Kontrolü (Biri diğerinin içinde geçiyorsa)
-                    // Örn: "Kandıra yolunda kaza!" ile "Kandıra yolunda korkutan kaza: 2 otomobil çarpıştı!"
-                    if (!isSameEvent && b1.length() > 5 && b2.length() > 5) {
-                        if (b1.contains(b2) || b2.contains(b1)) {
-                            isSameEvent = true;
-                            log.info("⚠️ BAŞLIK İÇERME YAKALANDI: '{}' <-> '{}'", haber1.getBaslik(), haber2.getBaslik());
-                        }
-                    }
-
-                    // 3. ÖZEL DURUM: İnatçı Kazalar (Başiskele/Sıvı Dökülmesi vb.)
+                    // Özel durum: trafik kazası eşleşmeleri
                     if (!isSameEvent && "Trafik Kazası".equals(haber1.getHaberTuru())) {
-                        String i1 = haber1.getIcerik().toLowerCase();
-                        String i2 = haber2.getIcerik().toLowerCase();
-
-                        boolean kaza1_basiskele = (b1.contains("başiskele") || i1.contains("başiskele")) && (b1.contains("sıvı") || i1.contains("sıvı") || b1.contains("dökül") || i1.contains("dökül"));
-                        boolean kaza2_basiskele = (b2.contains("başiskele") || i2.contains("başiskele")) && (b2.contains("sıvı") || i2.contains("sıvı") || b2.contains("dökül") || i2.contains("dökül"));
-
-                        if (kaza1_basiskele && kaza2_basiskele) {
-                            isSameEvent = true;
-                            log.info("⚠️ ÖZEL EŞLEŞME YAKALANDI (Başiskele Sıvı Kazası): '{}' ve '{}'", haber1.getBaslik(), haber2.getBaslik());
-                        }
-
-                        boolean kaza1_tunel = (b1.contains("tünel") || i1.contains("tünel")) && (b1.contains("kaza") || i1.contains("kaza") || b1.contains("çarp") || i1.contains("çarp"));
-                        boolean kaza2_tunel = (b2.contains("tünel") || i2.contains("tünel")) && (b2.contains("kaza") || i2.contains("kaza") || b2.contains("çarp") || i2.contains("çarp"));
-
-                        if (!isSameEvent && kaza1_tunel && kaza2_tunel) {
-                            isSameEvent = true;
-                            log.info("⚠️ ÖZEL EŞLEŞME YAKALANDI (Tünel Kazası): '{}' ve '{}'", haber1.getBaslik(), haber2.getBaslik());
-                        }
+                        isSameEvent = checkSpecialTrafficAccident(haber1, haber2, b1, b2);
                     }
 
                     if (isSameEvent) {
                         DedupDecision decision = pickKeepAndMerge(haber1, haber2);
+                        if (decision.updatedKeep()) haberRepository.save(decision.keep());
+                        toDeleteIds.add(decision.remove().getId());
 
-                        if (decision.updatedKeep) haberRepository.save(decision.keep);
-
-                        toDeleteIds.add(decision.remove.getId());
-
-                        log.info("✂️ SILINDI ({}): '{}' | TUTULDU ({}): '{}' | SEBEP: {}",
-                                decision.remove.getKaynakAd() != null ? decision.remove.getKaynakAd() : "?",
-                                decision.remove.getBaslik(),
-                                decision.keep.getKaynakAd() != null ? decision.keep.getKaynakAd() : "?",
-                                decision.keep.getBaslik(),
-                                decision.reason);
+                        log.info("✂️ Silindi: '{}' | Tutuldu: '{}' | Sebep: {}",
+                                decision.remove().getBaslik(),
+                                decision.keep().getBaslik(),
+                                decision.reason());
                     }
                 }
             }
@@ -291,57 +313,55 @@ public class LocationProcessorService {
                 }
             }
 
-            if (removedCount > 0) {
-                log.info("✅ Toplam {} adet farklı siteden alınmış mükerrer haber silindi.", removedCount);
-            } else {
-                log.info("ℹ️ Silinecek benzer haber bulunamadı.");
-            }
+            log.info(removedCount > 0
+                            ? "✅ {} mükerrer haber silindi." : "ℹ️ Silinecek haber bulunamadı.",
+                    removedCount);
 
         } catch (Exception e) {
-            log.error("Benzerlik ayrıştırma sırasında hata: {}", e.getMessage(), e);
+            log.error("Deduplication hatası: {}", e.getMessage(), e);
         }
+    }
+
+    private boolean checkSpecialTrafficAccident(Haber h1, Haber h2, String b1, String b2) {
+        String i1 = h1.getIcerik() != null ? h1.getIcerik().toLowerCase() : "";
+        String i2 = h2.getIcerik() != null ? h2.getIcerik().toLowerCase() : "";
+
+        boolean sivi1 = (b1.contains("başiskele") || i1.contains("başiskele"))
+                && (b1.contains("sıvı") || i1.contains("sıvı") || i1.contains("dökül"));
+        boolean sivi2 = (b2.contains("başiskele") || i2.contains("başiskele"))
+                && (b2.contains("sıvı") || i2.contains("sıvı") || i2.contains("dökül"));
+        if (sivi1 && sivi2) return true;
+
+        boolean tunel1 = (b1.contains("tünel") || i1.contains("tünel"))
+                && (b1.contains("kaza") || i1.contains("kaza") || i1.contains("çarp"));
+        boolean tunel2 = (b2.contains("tünel") || i2.contains("tünel"))
+                && (b2.contains("kaza") || i2.contains("kaza") || i2.contains("çarp"));
+        return tunel1 && tunel2;
     }
 
     private DedupDecision pickKeepAndMerge(Haber haber1, Haber haber2) {
         double score1 = getLocationQuality(haber1);
         double score2 = getLocationQuality(haber2);
 
-        Haber keep;
-        Haber remove;
+        Haber keep, remove;
         String reason;
 
-        if (score1 > score2) {
-            keep = haber1;
-            remove = haber2;
-            reason = "Daha spesifik/koordinatlı konum (" + score1 + " > " + score2 + ")";
-        } else if (score2 > score1) {
-            keep = haber2;
-            remove = haber1;
-            reason = "Daha spesifik/koordinatlı konum (" + score2 + " > " + score1 + ")";
-        } else if (hasCoordinates(haber1) && !hasCoordinates(haber2)) {
-            keep = haber1;
-            remove = haber2;
-            reason = "Koordinat var";
-        } else if (hasCoordinates(haber2) && !hasCoordinates(haber1)) {
-            keep = haber2;
-            remove = haber1;
-            reason = "Koordinat var";
+        if (score1 >= score2) {
+            keep = haber1; remove = haber2;
+            reason = "Konum kalitesi: " + score1 + " >= " + score2;
         } else {
-            // Konum kalitesi eşit: daha eski olanı tut
-            if (haber1.getId().compareTo(haber2.getId()) < 0) {
-                keep = haber1;
-                remove = haber2;
-            } else {
-                keep = haber2;
-                remove = haber1;
-            }
-            reason = "Aynı konum düzeyi (son eklenen silindi)";
+            keep = haber2; remove = haber1;
+            reason = "Konum kalitesi: " + score2 + " > " + score1;
+        }
+
+        // Eşitse daha eski olanı tut
+        if (score1 == score2 && haber1.getId().compareTo(haber2.getId()) >= 0) {
+            keep = haber2; remove = haber1;
+            reason = "Eşit kalite — eski kayıt tutuldu";
         }
 
         boolean updated = mergeBetterLocationData(keep, remove);
-        if (updated) {
-            reason += " | Konum/koordinat aktarıldı";
-        }
+        if (updated) reason += " | Konum verisi aktarıldı";
 
         return new DedupDecision(keep, remove, reason, updated);
     }
@@ -349,14 +369,13 @@ public class LocationProcessorService {
     private boolean mergeBetterLocationData(Haber keep, Haber remove) {
         boolean updated = false;
 
-        int keepScore = getSpecificityScore(keep.getKonumMetni());
+        int keepScore   = getSpecificityScore(keep.getKonumMetni());
         int removeScore = getSpecificityScore(remove.getKonumMetni());
 
-        if ((keep.getKonumMetni() == null || keep.getKonumMetni().isBlank())
-                && remove.getKonumMetni() != null && !remove.getKonumMetni().isBlank()) {
-            keep.setKonumMetni(remove.getKonumMetni());
-            updated = true;
-        } else if (removeScore > keepScore && remove.getKonumMetni() != null && !remove.getKonumMetni().isBlank()) {
+        boolean keepHasLocation   = keep.getKonumMetni() != null && !keep.getKonumMetni().isBlank();
+        boolean removeHasLocation = remove.getKonumMetni() != null && !remove.getKonumMetni().isBlank();
+
+        if (removeHasLocation && (!keepHasLocation || removeScore > keepScore)) {
             keep.setKonumMetni(remove.getKonumMetni());
             updated = true;
         }
@@ -370,40 +389,37 @@ public class LocationProcessorService {
         return updated;
     }
 
+    // ─── Yardımcı Metotlar ──────────────────────────────────────────────────
+
     private double getLocationQuality(Haber haber) {
-        if (haber == null) {
-            return 0;
-        }
-
+        if (haber == null) return 0;
         double base = getSpecificityScore(haber.getKonumMetni());
-
-        if (hasCoordinates(haber)) {
-            base += 500; // Koordinatlı kayıtlar kuvvetle tercih edilir
-        }
-
+        if (hasCoordinates(haber)) base += 500;
         return base;
     }
 
-    private String normalizeContentForSimilarity(String content) {
-        if (content == null) return "";
-        String cleaned = content.replaceAll("\\s+", " ").trim();
-        int limit = 1200; // Yorum/ilgili haber kalabalığını azaltmak için kısalt
-        return cleaned.length() > limit ? cleaned.substring(0, limit) : cleaned;
-    }
-
     private boolean hasCoordinates(Haber haber) {
-        return haber != null && haber.getEnlem() != null && haber.getEnlem() != 0
+        return haber != null
+                && haber.getEnlem() != null && haber.getEnlem() != 0
                 && haber.getBoylam() != null && haber.getBoylam() != 0;
     }
 
-    private record DedupDecision(Haber keep, Haber remove, String reason, boolean updatedKeep) {}
-
-    private void applyDefaultCoordinates(Haber haber) {
-        GeocodingService.LocationCoordinates fallback = geocodingService.getKocaeliLocationCoordinates("İzmit");
-        if (fallback != null && fallback.isValid()) {
-            haber.setKonumMetni("İzmit");
-            haber.setEnlem(fallback.latitude);
-            haber.setBoylam(fallback.longitude);
-        }
+    /** Haberin enlem/boylamını sıfırlar (haritada gizlemek için). */
+    private void clearCoordinates(Haber haber) {
+        haber.setEnlem(null);
+        haber.setBoylam(null);
     }
+
+    private String normalize(String s) {
+        if (s == null) return "";
+        return s.toLowerCase().replaceAll("[^a-zğüşıöç0-9]", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    private String normalizeContent(String content) {
+        if (content == null) return "";
+        String c = content.replaceAll("\\s+", " ").trim();
+        return c.length() > 1200 ? c.substring(0, 1200) : c;
+    }
+
+    private record DedupDecision(Haber keep, Haber remove, String reason, boolean updatedKeep) {}
 }

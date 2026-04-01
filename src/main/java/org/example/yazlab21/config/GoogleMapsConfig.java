@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @Getter
 public class GoogleMapsConfig {
     
-    @Value("${google.maps.api.key}")
+    @Value("AIzaSyBeGEBpEeiIGhzXvvnJRYFLxMD-j8UMKGo")
     private String apiKey;
 }
 
