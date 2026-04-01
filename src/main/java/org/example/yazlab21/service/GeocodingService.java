@@ -5,411 +5,300 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.Map;
-import java.util.List;
+import java.util.*;
+import java.util.regex.*;
 
 @Slf4j
 @Service
 public class GeocodingService {
 
     private final RestTemplate restTemplate = new RestTemplate();
-
-    // OpenStreetMap Nominatim API URL
     private static final String NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
+    private static final String REGION_CONTEXT = "Kocaeli";
 
-    // Kocaeli'deki ana ilçeler
-    private static final String[] KOCAELI_DISTRICTS = {
-            "İzmit", "Körfez", "Derince", "Gölcük", "Başiskele", "Kandıra",
-            "Çayırova", "Dilovası", "Kartepe", "Gebze", "Darıca", "Karamürsel"
+    private static final List<String> BILINEN_ILCELER = Arrays.asList(
+            "İzmit", "Gebze", "Darıca", "Körfez", "Başiskele", "Kartepe",
+            "Çayırova", "Dilovası", "Gölcük", "Kandıra", "Karamürsel",
+            "Derince", "Karabaş", "Arslanbey", "Hereke", "Tavşantepe"
+    );
+
+    private static final Set<String> GURULTU_KELIMELERI = new HashSet<>(Arrays.asList(
+            "bir", "bu", "şu", "o", "ve", "ile", "da", "de", "ki",
+            "için", "gibi", "kadar", "sonra", "önce", "ancak", "Ancak",
+            "Saat", "Gece", "Sabah", "Akşam", "Öğle", "Gündüz",
+            "Türkiye", "İstanbul"
+    ));
+
+    private static final String[] ZAMAN_ZARFLARI = {
+            "Gece", "Sabah", "Akşam", "Saat", "Öğle", "Gündüz",
+            "Dün", "Bugün", "Yarın", "Hafta"
     };
 
+    // Kural 1: Kesme işaretli bulunma hali
+    // Örnek: "İzmit'te", "Körfez Caddesi'nde", "D-100'de"
+    private static final Pattern KESME_BULUNMA = Pattern.compile(
+            "([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ0-9\\s\\-]{1,60}?)" +
+                    "(?:'de|'da|'te|'ta|'nde|'nda|'de|'da|'te|'ta|'nde|'nda)",
+            Pattern.UNICODE_CHARACTER_CLASS
+    );
+
+    // Kural 2: Yer tipi anahtar kelimeleri
+    // Örnek: "Körfez Caddesi", "Yenişehir Mahallesi"
+    private static final Pattern YER_TIPI = Pattern.compile(
+            "([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ0-9\\s\\-]{1,50}?)" +
+                    "\\s*(Mahallesi|Mah\\.|Caddesi|Cad\\.|Bulvarı|Blv\\.|Sokağı|Sokak|Sk\\." +
+                    "|Yolu|Kavşağı|Meydanı|Köyü|Sitesi|Sanayi Sitesi|Sanayi|Limanı" +
+                    "|Köprüsü|Tüneli|Stadyumu|Hastanesi|Okulu|Camii|Parkı|Ormanı)",
+            Pattern.UNICODE_CHARACTER_CLASS
+    );
+
+    // Kural 3: "X ilçesinde / semtinde" kalıpları
+    // Örnek: "Gebze ilçesinde", "Körfez semtinde"
+    private static final Pattern ILCE_KALIBI = Pattern.compile(
+            "([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ]{2,30})" +
+                    "\\s+(?:ilçesinde|semtinde|bölgesinde|mahallesinde|köyünde)",
+            Pattern.UNICODE_CHARACTER_CLASS
+    );
+
+    // ────────────────────────────────────────────────────────────────────────
+
     /**
-     * Metinden konum bilgisini çıkarır
+     * Ana metot: Haber metnindeki TÜM konum adaylarını çıkarır,
+     * geocoding uygular ve koordinat bulunanları döndürür.
+     * Liste boşsa haber haritada gösterilmez.
      */
-    public String extractLocationFromText(String text) {
-        if (text == null || text.isEmpty()) {
-            return null;
-        }
+    public List<LocationCoordinates> extractAndGeocodeAll(String text) {
+        if (text == null || text.trim().isEmpty()) return Collections.emptyList();
 
-        String foundDistrict = "";
-        String mahalle = "";
-        String cadde = "";
-        String sokak = "";
-        String karayolu = "";
-        String poi = "";
-        String bulvar = "";
+        List<String> adaylar = extractAllLocationCandidates(text);
+        log.info("🔍 Toplam {} konum adayı tespit edildi: {}", adaylar.size(), adaylar);
 
-        String textLower = text.toLowerCase();
+        List<LocationCoordinates> sonuclar = new ArrayList<>();
+        Set<String> sorgulanmis = new HashSet<>();
 
-        // Özel bilinen büyük mahalleler ve semtleri ilçe garantili manuel yakala
-        if (textLower.contains("yahya kaptan")) {
-            mahalle = "Yahya Kaptan Mahallesi";
-            foundDistrict = "İzmit";
-        } else if (textLower.contains("yuvam akarca")) {
-            mahalle = "Yuvam Akarca";
-            foundDistrict = "İzmit";
-        } else if (textLower.contains("bekirdere")) {
-            mahalle = "Bekirdere Mahallesi";
-            foundDistrict = "İzmit";
-        } else if (textLower.contains("karabaş")) {
-            mahalle = "Karabaş Mahallesi";
-            foundDistrict = "İzmit";
-        } else if (textLower.contains("plajyolu")) {
-            mahalle = "Plajyolu";
-            foundDistrict = "İzmit";
-        }
+        for (String aday : adaylar) {
+            if (sorgulanmis.contains(aday.toLowerCase())) continue;
+            sorgulanmis.add(aday.toLowerCase());
 
-        // 1. Önce Hangi İlçede Olduğunu Yakala (Eğer manuel bulunmadıysa)
-        if (foundDistrict.isEmpty()) {
-            for (String district : KOCAELI_DISTRICTS) {
-                if (textLower.matches(".*\\b" + district.toLowerCase() + "\\b.*")) {
-                    foundDistrict = district;
-                    break;
-                }
+            LocationCoordinates koordinat = callNominatimAPI(aday.trim() + ", " + REGION_CONTEXT, aday);
+            if (koordinat != null && koordinat.isValid()) {
+                sonuclar.add(koordinat);
             }
         }
 
-        // Tramvay durakları arası kaza veya direkt durak aranması özel durumu
-        if (textLower.contains("tramvay") || textLower.contains("akçaray")) {
-            // En uzun isimden en kısaya doğru sıralı ki "Yenişehir" vb. yanlış içerik eşleşmesi yapmasın
-            String[] duraklar = {
-                "Milli İrade Meydanı", "Eğitim Kampüsü", "Kongre Merkezi", "Mehmet Ali Paşa",
-                "Yahya Kaptan", "Yeni Cuma", "Doğu Kışla", "Yenişehir", "Plajyolu",
-                "Sekapark", "Seka Park", "Santral", "Fevziye", "Otogar", "Gar"
-            };
-            for (String d : duraklar) {
-                if (textLower.contains(d.toLowerCase())) {
-                    // API tarafinda "Tramvay İstasyonu" ibaresi daha kolay bulunuyor veya temizleniyor
-                    poi = d.replace("Seka Park", "Sekapark") + " Tramvay İstasyonu";
-                    foundDistrict = "İzmit";
-                    break;
-                }
-            }
-        }
-
-        // Otogar kuralı - Eğer içinde tramvay geçmiyorsa direkt İzmit Otogarını kasteder
-        if (poi.isEmpty() && textLower.matches(".*\\botogar\\b.*") && !textLower.contains("tramvay")) {
-            poi = "İzmit Şehirlerarası Otobüs Terminali";
-            foundDistrict = "İzmit";
-        }
-
-        // Önce Çok bilinen spesifik yerleri ara (Eğer üstteki özel kurallar bulmadıysa)
-        if (poi.isEmpty()) {
-            String[] bilinenNoktalar = {
-                    "Şehir Hastanesi", "Seka Devlet Hastanesi", "Kocaeli Devlet Hastanesi", "Derince Eğitim ve Araştırma Hastanesi", "Umuttepe Hastanesi", "Sopalı Hastanesi", "Farabi Devlet Hastanesi", "Fatih Devlet Hastanesi",
-                    "Umuttepe", "Seka Park", "Kent Meydanı", "Yürüyüş Yolu", "Fuar Alanı", "Ormanya", "Bilişim Vadisi", "Tübitak",
-                    "Symbol AVM", "41 Burda", "Outlet Center", "Dolphin AVM", "Özdilek", "Arasta Park", "Ncity",
-                    "Cengiz Topel", "Kartepe Kayak", "Kefken", "Kerpe", "Maşukiye", "Yuvacık",
-                    // Bilinen Büyük Viyadükler ve Tüneller (TEM Otoyolu sorununu kökten çözer)
-                    "Korutepe Viyadüğü", "Gültepe Viyadüğü", "Şirintepe Viyadüğü", "Bekirdere Viyadüğü", "Ertuğrul Gazi Viyadüğü", "Osmangazi Köprüsü", "Tavşancıl Viyadüğü", "Hereke Viyadüğü"
-            };
-            for (String n : bilinenNoktalar) {
-                Pattern p = Pattern.compile("(?i)" + Pattern.quote(n));
-                if (p.matcher(text).find()) {
-                    poi = n;
-                    // Eğer Akçaray veya İzmit içi bir yerse garantile
-                    if (n.contains("Seka Park") || n.contains("Kent Meydanı") || n.contains("Şehir Hastanesi") || n.contains("Umuttepe") || n.contains("Viyadüğü")) {
-                        if (n.contains("Tavşancıl") || n.contains("Hereke") || n.contains("Osmangazi")) {
-                            foundDistrict = (n.contains("Osmangazi")) ? "Dilovası" : "Körfez";
-                        } else {
-                            foundDistrict = "İzmit";
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-
-        // Eğer manuel bulamadıysa özel regex ile durak, istasyon, viyadük, fabrika vb. ara
-        if (poi.isEmpty()) {
-            Matcher mPoi = Pattern.compile("([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ0-9'\\-]*\\s+){1,4}(?i)(Tramvay Durağı|Durağı|İstasyonu|Hastanesi|Polikliniği|Parkı|Kampüsü|Üniversitesi|AVM|Merkezi|Lisesi|Okulu|Tesisleri|Köprüsü|Viyadüğü|Viyadük|Tüneli|Tünel|Gişeleri|Plajı|Sahili|Fabrikası|Fabrika|Sanayi Sitesi)").matcher(text);
-            if (mPoi.find()) {
-                poi = mPoi.group(0).trim();
-            }
-        }
-
-        // Karayolu, D100 vb. bul
-        Matcher mYol = Pattern.compile("(?i)\\b(D-?100|E-?80|D-?130|Kuzey Marmara Otoyolu|Anadolu Otoyolu|TEM Otoyolu|TEM|D100)\\b").matcher(text);
-        if (mYol.find()) {
-            String yol = mYol.group(1).toUpperCase().replace(" ", "").replace("-", "");
-            if (yol.contains("TEM") || yol.contains("E80") || yol.contains("ANADOLU")) {
-                karayolu = "Anadolu Otoyolu";
-            } else if (yol.contains("KUZEYMARMARA")) {
-                karayolu = "Kuzey Marmara Otoyolu";
-            } else if (yol.contains("130")) {
-                karayolu = "D-130 Karayolu";
-            } else {
-                karayolu = "D-100 Karayolu";
-            }
-        }
-
-        // Bulvar, Yol, Kavşak, Meydan, Site (Örn: "Kandıra Yolu", "Turan Güneş Bulvarı", "Sanayi Sitesi")
-        Matcher mBulvar = Pattern.compile("([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ]*\\s+){1,3}(?i)(Bulvarı|Yolu|Kavşağı|Mevkii|Sitesi|Meydanı)").matcher(text);
-        if (mBulvar.find()) {
-            bulvar = mBulvar.group(0).trim();
-        }
-
-        // Mahalle bul (Sadece Büyük harfle başlayan kelimeleri almasını sağlamak için)
-        if (mahalle.isEmpty()) {
-            Matcher mMahalle = Pattern.compile("([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ]*\\s+){1,3}(?i)(Mahallesi|Mah\\.)").matcher(text);
-            if (mMahalle.find()) {
-                mahalle = mMahalle.group(0).replaceAll("(?i)Mah\\.", "Mahallesi").trim();
-            } else {
-                // Kalan bilinen küçük mahalle/bölge isimleri
-                String[] ekMahalleler = {"Yenişehir", "Yenidoğan", "Sanayi"};
-                for (String m : ekMahalleler) {
-                    if (textLower.contains(m.toLowerCase())) {
-                        mahalle = m + " Mahallesi";
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Cadde bul
-        Matcher mCadde = Pattern.compile("([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ]*\\s+){1,3}(?i)(Caddesi|Cadde|Cad\\.)").matcher(text);
-        if (mCadde.find()) cadde = mCadde.group(0).replaceAll("(?i)Cad\\.", "Caddesi").trim();
-
-        // Sokak bul
-        Matcher mSokak = Pattern.compile("([A-ZÇĞİÖŞÜ0-9][a-zçğıöşüA-ZÇĞİÖŞÜ0-9]*\\s+){1,3}(?i)(Sokağı|Sokak|Sok\\.)").matcher(text);
-        if (mSokak.find()) sokak = mSokak.group(0).replaceAll("(?i)Sok\\.", "Sokak").trim();
-
-        java.util.List<String> parts = new java.util.ArrayList<>();
-        if (!poi.isEmpty()) parts.add(poi);
-        if (!sokak.isEmpty()) parts.add(sokak);
-        if (!cadde.isEmpty()) parts.add(cadde);
-        if (!bulvar.isEmpty()) parts.add(bulvar);
-        if (!karayolu.isEmpty()) parts.add(karayolu);
-        if (!mahalle.isEmpty()) parts.add(mahalle);
-        if (!foundDistrict.isEmpty()) parts.add(foundDistrict);
-
-        if (!parts.isEmpty()) {
-            return String.join(", ", parts);
-        }
-
-        return null;
+        log.info("✅ {} konum başarıyla koordinatlandı.", sonuclar.size());
+        return sonuclar;
     }
 
     /**
-     * Çıkarılan adresi OpenStreetMap (Nominatim) API'sine sorarak koordinatları alır
+     * Metinden tüm konum adaylarını çıkarır (geocoding yapmadan).
      */
+    List<String> extractAllLocationCandidates(String text) {
+        Set<String> adaySet = new LinkedHashSet<>();
+
+        // Kural 1: Kesme işaretli bulunma hali
+        Matcher m1 = KESME_BULUNMA.matcher(text);
+        while (m1.find()) {
+            String aday = temizle(m1.group(1));
+            if (gecerliMi(aday)) adaySet.add(aday);
+        }
+
+        // Kural 2: Yer tipi anahtar kelimeleri — tam ifade önce, sonra prefix
+        Matcher m2 = YER_TIPI.matcher(text);
+        while (m2.find()) {
+            String tamIfade = temizle(m2.group(0));
+            String sadecePrefiks = temizle(m2.group(1));
+            if (gecerliMi(tamIfade)) adaySet.add(tamIfade);
+            if (gecerliMi(sadecePrefiks)) adaySet.add(sadecePrefiks);
+        }
+
+        // Kural 3: "X ilçesinde" kalıpları
+        Matcher m3 = ILCE_KALIBI.matcher(text);
+        while (m3.find()) {
+            String aday = temizle(m3.group(1));
+            if (gecerliMi(aday)) adaySet.add(aday);
+        }
+
+        // Kural 4: Bilinen ilçe adlarını doğrudan ara
+        for (String ilce : BILINEN_ILCELER) {
+            if (text.contains(ilce)) {
+                adaySet.add(ilce);
+            }
+        }
+
+        return new ArrayList<>(adaySet);
+    }
+
+    /**
+     * Tek bir konum adı için koordinat döndürür.
+     */
+    public LocationCoordinates getCoordinates(String locationName) {
+        if (locationName == null || locationName.trim().isEmpty()) return null;
+        return callNominatimAPI(locationName.trim() + ", " + REGION_CONTEXT, locationName);
+    }
+
+    /** @deprecated extractAndGeocodeAll() kullanın. */
+    @Deprecated
     public LocationCoordinates getKocaeliLocationCoordinates(String locationName) {
-        if (locationName == null || locationName.trim().isEmpty()) {
-            return null;
-        }
-
-        try {
-            // Parçalarına ayır
-            java.util.List<String> list = new java.util.ArrayList<>(java.util.Arrays.asList(locationName.split(",\\s*")));
-
-            String poi = "", sokak = "", cadde = "", bulvar = "", yol = "", mahalle = "", ilce = "";
-
-            for(String p : list) {
-                p = p.trim();
-                if(p.equalsIgnoreCase("Kocaeli")) continue;
-
-                String pLower = p.toLowerCase();
-                if(pLower.matches(".*\\b(sokak|sokağı|sok\\.)\\b.*")) sokak = p;
-                else if(pLower.matches(".*\\b(cadde|caddesi|cad\\.)\\b.*")) cadde = p;
-                else if(pLower.matches(".*\\b(mahalle|mahallesi|mah\\.)\\b.*")) mahalle = p;
-                else if(pLower.matches(".*\\b(bulvar|bulvarı)\\b.*")) bulvar = p;
-                else if(pLower.matches(".*\\b(yolu|karayolu|otoyolu)\\b.*")) yol = p;
-                else if(KOCAELI_DISTRICTS_CONTAINS(p)) ilce = p;
-                else poi = p;
-            }
-
-            java.util.List<String> queriesToTry = new java.util.ArrayList<>();
-
-            // 0. Tam metin
-            String fullStr = locationName.endsWith("Kocaeli") ? locationName : locationName + ", Kocaeli";
-            queriesToTry.add(fullStr);
-
-            // 1. POI Odaklı
-            if (!poi.isEmpty()) {
-                String cleanPoi = poi.replaceAll("(?i)\\s+(Tramvay Durağı|Tramvay İstasyonu|Tramvay|Durağı|İstasyonu|Gişeleri|Tesisleri|Polikliniği|Hastanesi|Merkezi|Parkı|Viyadüğü|Viyadük|Tüneli|Tünel|Fabrikası|Fabrika|Sanayi Sitesi)", "").trim();
-
-                if (!ilce.isEmpty()) queriesToTry.add(poi + ", " + ilce + ", Kocaeli");
-                queriesToTry.add(poi + ", Kocaeli");
-                if (!ilce.isEmpty()) queriesToTry.add(poi + " " + ilce + " Kocaeli"); // Boşlukla ayrılmış serbest arama
-
-                if (!cleanPoi.isEmpty() && !cleanPoi.equals(poi)) {
-                    if (!ilce.isEmpty()) queriesToTry.add(cleanPoi + ", " + ilce + ", Kocaeli");
-                    queriesToTry.add(cleanPoi + ", Kocaeli");
-                }
-            }
-
-            // 2. Sokak Odaklı
-            if (!sokak.isEmpty()) {
-                if (!mahalle.isEmpty() && !ilce.isEmpty()) queriesToTry.add(sokak + ", " + mahalle + ", " + ilce + ", Kocaeli");
-                if (!ilce.isEmpty()) queriesToTry.add(sokak + ", " + ilce + ", Kocaeli");
-                queriesToTry.add(sokak + ", Kocaeli");
-                if (!ilce.isEmpty()) queriesToTry.add(sokak + " " + ilce + " Kocaeli");
-
-                String cleanSokak = sokak.replaceAll("(?i)\\s+(Sokak|Sokağı|Sok\\.)", "").trim();
-                if(!cleanSokak.isEmpty() && !ilce.isEmpty()) queriesToTry.add(cleanSokak + " Sokak, " + ilce + ", Kocaeli");
-            }
-
-            // 3. Cadde Odaklı
-            if (!cadde.isEmpty()) {
-                if (!mahalle.isEmpty() && !ilce.isEmpty()) queriesToTry.add(cadde + ", " + mahalle + ", " + ilce + ", Kocaeli");
-                if (!ilce.isEmpty()) queriesToTry.add(cadde + ", " + ilce + ", Kocaeli");
-                queriesToTry.add(cadde + ", Kocaeli");
-                if (!ilce.isEmpty()) queriesToTry.add(cadde + " " + ilce + " Kocaeli");
-            }
-
-            // 4. Bulvar Öğesi
-            if (!bulvar.isEmpty()) {
-                if (!ilce.isEmpty()) queriesToTry.add(bulvar + ", " + ilce + ", Kocaeli");
-                queriesToTry.add(bulvar + ", Kocaeli");
-            }
-
-            // 5. Yollar
-            if (!yol.isEmpty()) {
-                if (!ilce.isEmpty()) queriesToTry.add(yol + ", " + ilce + ", Kocaeli");
-                queriesToTry.add(yol + ", Kocaeli");
-                String cleanYol = yol.replaceAll("(?i)\\s+(Yolu|Karayolu)", "").trim();
-                if(!cleanYol.isEmpty()) queriesToTry.add(cleanYol + ", Kocaeli");
-            }
-
-            // 6. Mahalle Odaklı
-            if (!mahalle.isEmpty()) {
-                if (!ilce.isEmpty()) queriesToTry.add(mahalle + ", " + ilce + ", Kocaeli");
-                queriesToTry.add(mahalle + ", Kocaeli");
-
-                String cleanMahalle = mahalle.replaceAll("(?i)\\s+(Mahallesi|Mah\\.)", "").trim();
-                if(!cleanMahalle.isEmpty() && !ilce.isEmpty()) queriesToTry.add(cleanMahalle + " Mahallesi, " + ilce + ", Kocaeli");
-                if(!cleanMahalle.isEmpty() && !ilce.isEmpty()) queriesToTry.add(cleanMahalle + ", " + ilce + ", Kocaeli");
-                if(!cleanMahalle.isEmpty()) queriesToTry.add(cleanMahalle + " Kocaeli");
-            }
-
-            // 7. Sadece İlçe
-            if (!ilce.isEmpty()) {
-                queriesToTry.add(ilce + ", Kocaeli");
-            }
-
-            // Listeden benzersiz olanları sırayla sorgula
-            java.util.List<String> tried = new java.util.ArrayList<>();
-            for(String q : queriesToTry) {
-                // Hatalı virgülleri temizle
-                q = q.replaceAll("\\s+", " ").replaceAll(",\\s*,", ",").replaceAll("^,\\s*", "").trim();
-                if(q.equals(", Kocaeli") || q.equals("Kocaeli") || q.isEmpty()) continue;
-
-                if(tried.contains(q)) continue;
-                tried.add(q);
-
-                Thread.sleep(1000);
-                log.info("📍 Nominatim Aranıyor: {}", q);
-                LocationCoordinates result = callNominatimAPI(q, locationName);
-                if (result != null) return result;
-            }
-
-            // Hiçbiri bulamazsa yedek sisteme düş
-            log.warn("❌ Tüm API aramaları '{}' için sonuçsuz kaldı. Yedek sisteme (İlçe) geçiliyor.", locationName);
-            return getFallbackCoordinates(locationName);
-
-        } catch (Exception e) {
-            log.error("Geocoding API hatası: {}", e.getMessage());
-            return getFallbackCoordinates(locationName);
-        }
+        return getCoordinates(locationName);
     }
 
-    /**
-     * İlçe listesinde olup olmadığını kontrol eden yardımcı metod
-     */
-    private boolean KOCAELI_DISTRICTS_CONTAINS(String district) {
-        for (String d : KOCAELI_DISTRICTS) {
-            if (d.equalsIgnoreCase(district)) return true;
-        }
-        return false;
+    /** @deprecated extractAndGeocodeAll() kullanın. */
+    @Deprecated
+    public String extractLocationFromText(String text) {
+        List<String> adaylar = extractAllLocationCandidates(text);
+        return adaylar.isEmpty() ? null : adaylar.get(0);
     }
 
-    /**
-     * API'ye istek atan yardımcı metod
-     */
+    // ─── Nominatim API ──────────────────────────────────────────────────────
+
+    // Uygulama genelinde son istek zamanını tut
+    private static volatile long sonIstekZamani = 0L;
+    private static final long MIN_ISTEK_ARALIGI_MS = 2000; // 2 saniye — güvenli taraf
+    private static final int MAX_RETRY = 3;
+
     private LocationCoordinates callNominatimAPI(String searchQuery, String originalName) {
-        try {
-            String url = UriComponentsBuilder.fromUriString(NOMINATIM_URL)
-                    .queryParam("q", searchQuery)
-                    .queryParam("format", "json")
-                    .queryParam("limit", 1)
-                    // Türkiye içi sonuçlara öncelik vermek için ülke kodu
-                    .queryParam("countrycodes", "tr")
-                    .build()
-                    .toUriString();
+        for (int deneme = 1; deneme <= MAX_RETRY; deneme++) {
+            try {
+                // Global throttle: son istekten bu yana yeterli süre geçmediyse bekle
+                synchronized (GeocodingService.class) {
+                    long simdi = System.currentTimeMillis();
+                    long gecen = simdi - sonIstekZamani;
+                    if (gecen < MIN_ISTEK_ARALIGI_MS) {
+                        Thread.sleep(MIN_ISTEK_ARALIGI_MS - gecen);
+                    }
+                    sonIstekZamani = System.currentTimeMillis();
+                }
 
-            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-            headers.set("User-Agent", "YazlabHaberHaritasi/1.0");
-            org.springframework.http.HttpEntity<String> entity = new org.springframework.http.HttpEntity<>(headers);
+                String url = UriComponentsBuilder.fromUriString(NOMINATIM_URL)
+                        .queryParam("q", searchQuery)
+                        .queryParam("format", "json")
+                        .queryParam("limit", 1)
+                        .queryParam("countrycodes", "tr")
+                        .queryParam("addressdetails", 1)
+                        .build()
+                        .toUriString();
 
-            org.springframework.http.ResponseEntity<List> response = restTemplate.exchange(
-                    url,
-                    org.springframework.http.HttpMethod.GET,
-                    entity,
-                    List.class
-            );
+                org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+                headers.set("User-Agent", "YazlabHaberHaritasi/1.0 (university project)");
+                headers.set("Accept-Language", "tr,en");
+                org.springframework.http.HttpEntity<String> entity =
+                        new org.springframework.http.HttpEntity<>(headers);
 
-            List<Map<String, Object>> results = response.getBody();
+                @SuppressWarnings("unchecked")
+                org.springframework.http.ResponseEntity<List> response = restTemplate.exchange(
+                        url, org.springframework.http.HttpMethod.GET, entity, List.class
+                );
 
-            if (results != null && !results.isEmpty()) {
-                Map<String, Object> firstResult = results.get(0);
-                double lat = Double.parseDouble(firstResult.get("lat").toString());
-                double lon = Double.parseDouble(firstResult.get("lon").toString());
-                String displayName = firstResult.get("display_name").toString();
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> results = response.getBody();
 
-                log.info("📍 Harita API Koordinat Buldu: {} -> ({}, {})", searchQuery, lat, lon);
-                // Dönen ismi orijinal isim olarak tutuyoruz ki arayüzde saçma sapan uzun adresler çıkmasın
-                return new LocationCoordinates(originalName, lat, lon, displayName);
+                if (results != null && !results.isEmpty()) {
+                    Map<String, Object> first = results.get(0);
+                    double lat = Double.parseDouble(first.get("lat").toString());
+                    double lon = Double.parseDouble(first.get("lon").toString());
+                    String displayName = first.get("display_name").toString();
+                    String osmClass = first.getOrDefault("class", "unknown").toString();
+                    String osmType  = first.getOrDefault("type",  "unknown").toString();
+
+                    log.info("✅ Koordinat bulundu → '{}' : ({}, {}) [{}]",
+                            searchQuery, lat, lon, osmType);
+                    return new LocationCoordinates(originalName, lat, lon, displayName, osmClass, osmType);
+                } else {
+                    log.warn("⚠️  Sonuç bulunamadı → '{}'", searchQuery);
+                    return null; // Retry'a gerek yok, API cevap verdi ama sonuç yok
+                }
+
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return null;
+            } catch (org.springframework.web.client.HttpClientErrorException e) {
+                if (e.getStatusCode().value() == 429) {
+                    long bekleme = (long) Math.pow(2, deneme) * 3000L; // 6s, 12s, 24s
+                    log.warn("⏳ 429 Rate limit (deneme {}/{}), {}ms bekleniyor → '{}'",
+                            deneme, MAX_RETRY, bekleme, searchQuery);
+                    try {
+                        Thread.sleep(bekleme);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return null;
+                    }
+                    // MAX_RETRY'a ulaştıysak null dön
+                    if (deneme == MAX_RETRY) {
+                        log.error("❌ {} denemede de 429 alındı, atlanıyor: '{}'", MAX_RETRY, searchQuery);
+                        return null;
+                    }
+                } else {
+                    log.error("❌ HTTP hatası ('{}') : {}", searchQuery, e.getMessage());
+                    return null;
+                }
+            } catch (Exception e) {
+                log.error("❌ Nominatim API hatası ('{}') : {}", searchQuery, e.getMessage());
+                return null;
             }
-        } catch (Exception e) {
-            log.warn("API isteği başarısız oldu ({}): {}", searchQuery, e.getMessage());
         }
         return null;
     }
 
-    /**
-     * Eğer API cevap vermezse veya adresi bulamazsa eski sistemdeki gibi ilçe merkezini döndürür.
-     * Denizin ortasına düşen koordinatlar düzeltilmiştir.
-     */
-    private LocationCoordinates getFallbackCoordinates(String locationName) {
-        String lowerName = locationName.toLowerCase();
+    // ─── Yardımcı Metotlar ──────────────────────────────────────────────────
 
-        if (lowerName.contains("izmit")) return new LocationCoordinates("İzmit", 40.7671, 29.9427, "İzmit, Kocaeli");
-        if (lowerName.contains("körfez")) return new LocationCoordinates("Körfez", 40.7900, 29.7400, "Körfez, Kocaeli"); // Denizden karaya çekildi
-        if (lowerName.contains("derince")) return new LocationCoordinates("Derince", 40.7550, 29.8300, "Derince, Kocaeli");
-        // Gölcük koordinatı karaya alındı (Önceki deniz ortasıydı)
-        if (lowerName.contains("gölcük")) return new LocationCoordinates("Gölcük", 40.7180, 29.8200, "Gölcük, Kocaeli");
-        if (lowerName.contains("başiskele")) return new LocationCoordinates("Başiskele", 40.7167, 29.9333, "Başiskele, Kocaeli");
-        if (lowerName.contains("kandıra")) return new LocationCoordinates("Kandıra", 41.0667, 30.1500, "Kandıra, Kocaeli");
-        if (lowerName.contains("çayırova")) return new LocationCoordinates("Çayırova", 40.8250, 29.3800, "Çayırova, Kocaeli");
-        if (lowerName.contains("dilovası")) return new LocationCoordinates("Dilovası", 40.7850, 29.5400, "Dilovası, Kocaeli");
-        if (lowerName.contains("kartepe")) return new LocationCoordinates("Kartepe", 40.7500, 30.0167, "Kartepe, Kocaeli");
-        if (lowerName.contains("gebze")) return new LocationCoordinates("Gebze", 40.8000, 29.4300, "Gebze, Kocaeli");
-        if (lowerName.contains("darıca")) return new LocationCoordinates("Darıca", 40.7667, 29.4000, "Darıca, Kocaeli");
-        if (lowerName.contains("karamürsel")) return new LocationCoordinates("Karamürsel", 40.6917, 29.6167, "Karamürsel, Kocaeli");
-
-        return null;
+    private String temizle(String s) {
+        return s == null ? "" : s.trim().replaceAll("\\s{2,}", " ");
     }
 
-    /**
-     * İç sınıf: Konum Koordinatları
-     */
+    private boolean gecerliMi(String s) {
+        if (s == null || s.length() < 3) return false;
+
+        // Çok uzun stringler gürültüdür (ör. "Gece saatlerinde Hacıhızır Mahallesi Bağlar Yolu")
+        if (s.length() > 50) return false;
+
+        // Bilinen gürültü kelimeleri
+        if (GURULTU_KELIMELERI.contains(s)) return false;
+
+        // Zaman zarflarıyla başlayanlar konum değildir
+        for (String zarf : ZAMAN_ZARFLARI) {
+            if (s.startsWith(zarf)) return false;
+        }
+
+        return true;
+    }
+
+    // ─── Veri Sınıfı ────────────────────────────────────────────────────────
+
     public static class LocationCoordinates {
-        public String locationName;
-        public double latitude;
-        public double longitude;
-        public String formattedAddress;
 
-        public LocationCoordinates(String locationName, double latitude, double longitude, String formattedAddress) {
-            this.locationName = locationName;
-            this.latitude = latitude;
-            this.longitude = longitude;
+        public final String locationName;
+        public final double latitude;
+        public final double longitude;
+        public final String formattedAddress;
+        public final String osmClass;
+        public final String osmType;
+
+        public LocationCoordinates(String locationName, double latitude, double longitude,
+                                   String formattedAddress, String osmClass, String osmType) {
+            this.locationName    = locationName;
+            this.latitude        = latitude;
+            this.longitude       = longitude;
             this.formattedAddress = formattedAddress;
+            this.osmClass        = osmClass;
+            this.osmType         = osmType;
         }
 
+        /** Geriye dönük uyumluluk için 4-parametre constructor. */
+        public LocationCoordinates(String locationName, double latitude, double longitude,
+                                   String formattedAddress) {
+            this(locationName, latitude, longitude, formattedAddress, "", "");
+        }
+
+        /** (0,0) Atlas Okyanusu'nda olduğu için geçersizdir. */
         public boolean isValid() {
-            return latitude != 0 && longitude != 0;
+            return latitude != 0.0 && longitude != 0.0;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("LocationCoordinates{name='%s', lat=%.6f, lon=%.6f, type='%s/%s'}",
+                    locationName, latitude, longitude, osmClass, osmType);
         }
     }
 }
