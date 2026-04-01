@@ -22,11 +22,11 @@ public class BizimYakaScraper {
 
     private final HaberRepository haberRepository;
 
-    public void scrapeBizimYaka() {
-        LocalDateTime ucGunOnce = LocalDateTime.now().minusDays(3).withHour(0).withMinute(0).withSecond(0).withNano(0);
+    public void scrapeBizimYaka(int days) {
+        LocalDateTime limitTarih = LocalDateTime.now().minusDays(days).withHour(0).withMinute(0).withSecond(0).withNano(0);
         DateTimeFormatter logFormat = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
 
-        System.out.println("📅 3 Gün Sınırı: " + ucGunOnce.format(logFormat));
+        System.out.println("📅 " + days + " Gün Sınırı: " + limitTarih.format(logFormat));
 
         List<String> kategoriLinkleri = Arrays.asList(
                 "https://www.bizimyaka.com/arsiv/kocaeli-son-dakika-haberleri",
@@ -98,7 +98,7 @@ public class BizimYakaScraper {
                                         ozet
                                 );
 
-                                if (haberZamani.isBefore(ucGunOnce)) {
+                                if (haberZamani.isBefore(limitTarih)) {
                                     System.out.println("⏳ [ESKİ HABER ATLANDI] " + baslik);
                                     eskiHaberSiniri = true;
                                     break;

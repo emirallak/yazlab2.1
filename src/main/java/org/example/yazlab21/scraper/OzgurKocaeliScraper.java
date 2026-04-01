@@ -28,11 +28,11 @@ public class OzgurKocaeliScraper {
 
     private final HaberRepository haberRepository;
 
-    public void scrapeOzgurKocaeli() {
-        LocalDateTime ucGunOnce = LocalDateTime.now().minusDays(3).withHour(0).withMinute(0).withSecond(0).withNano(0);
+    public void scrapeOzgurKocaeli(int days) {
+        LocalDateTime limitTarih = LocalDateTime.now().minusDays(days).withHour(0).withMinute(0).withSecond(0).withNano(0);
         DateTimeFormatter logFormat = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
 
-        System.out.println("📅 3 Gün Sınırı: " + ucGunOnce.format(logFormat));
+        System.out.println("📅 " + days + " Gün Sınırı: " + limitTarih.format(logFormat));
         System.out.println("🤖 Selenium WebDriver Başlatılıyor...");
 
         // 1. Chrome'u Arka Planda Hazırla
@@ -114,8 +114,8 @@ public class OzgurKocaeliScraper {
                                     haberZamani = LocalDateTime.now();
                                 }
 
-                                // 3 Gün Filtresi
-                                if (haberZamani.isBefore(ucGunOnce)) {
+                                // Gün Sınırı Filtresi
+                                if (haberZamani.isBefore(limitTarih)) {
                                     System.out.println("⏳ [ESKİ HABER SINIRI] " + haberZamani.format(logFormat) + " -> Sonraki kategoriye geçiliyor.");
                                     eskiHaberSiniri = true;
                                     break;

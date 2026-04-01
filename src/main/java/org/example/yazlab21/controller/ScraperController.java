@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -23,40 +24,40 @@ public class ScraperController {
 
 
     @GetMapping("/bizimyaka")
-    public ResponseEntity<String> tetiklebizimYaka() {
-        bizimYakaScraper.scrapeBizimYaka();
+    public ResponseEntity<String> tetiklebizimYaka(@RequestParam(defaultValue = "3") int days) {
+        bizimYakaScraper.scrapeBizimYaka(days);
         locationProcessorService.processAllNewsLocations(); // Tüm kategoriler için konum/geocode
         locationProcessorService.deduplicateAndKeepMostSpecific();
         return ResponseEntity.ok("✅ Bizim Yaka scraping tamamlandı, tüm haberlerin konumu/geocode'u işlendi ve mükerrerler temizlendi!");
     }
 
     @GetMapping("/ozgurkocaeli")
-    public ResponseEntity<String> tetikleozgurkocaeli() {
-        ozgurKocaeliScraper.scrapeOzgurKocaeli();
+    public ResponseEntity<String> tetikleozgurkocaeli(@RequestParam(defaultValue = "3") int days) {
+        ozgurKocaeliScraper.scrapeOzgurKocaeli(days);
         locationProcessorService.processAllNewsLocations();
         locationProcessorService.deduplicateAndKeepMostSpecific();
         return ResponseEntity.ok("✅ Özgür Kocaeli scraping tamamlandı, tüm haberlerin konumu/geocode'u işlendi ve mükerrerler temizlendi!");
     }
 
     @GetMapping("/cagdaskocaeli")
-    public ResponseEntity<String> tetiklecagdaskocaeli() {
-        cagdasKocaeliScraper.scrapeCagdasKocaeli();
+    public ResponseEntity<String> tetiklecagdaskocaeli(@RequestParam(defaultValue = "3") int days) {
+        cagdasKocaeliScraper.scrapeCagdasKocaeli(days);
         locationProcessorService.processAllNewsLocations();
         locationProcessorService.deduplicateAndKeepMostSpecific();
         return ResponseEntity.ok("✅ Çağdaş Kocaeli scraping tamamlandı, tüm haberlerin konumu/geocode'u işlendi ve mükerrerler temizlendi!");
     }
 
     @GetMapping("/seskocaeli")
-    public ResponseEntity<String> tetikleseskocaeli() {
-        sesKocaeliScraper.scrapeSesKocaeli();
+    public ResponseEntity<String> tetikleseskocaeli(@RequestParam(defaultValue = "3") int days) {
+        sesKocaeliScraper.scrapeSesKocaeli(days);
         locationProcessorService.processAllNewsLocations();
         locationProcessorService.deduplicateAndKeepMostSpecific();
         return ResponseEntity.ok("✅ Ses Kocaeli scraping tamamlandı, tüm haberlerin konumu/geocode'u işlendi ve mükerrerler temizlendi!");
     }
 
     @GetMapping("/yenikocaeli")
-    public ResponseEntity<String> tetikleyyenikocaeli() {
-        yenikocaeliScraper.scrapeYenikocaeli();
+    public ResponseEntity<String> tetikleyenikocaeli(@RequestParam(defaultValue = "3") int days) {
+        yenikocaeliScraper.scrapeYenikocaeli(days);
         locationProcessorService.processAllNewsLocations();
         locationProcessorService.deduplicateAndKeepMostSpecific();
         return ResponseEntity.ok("✅ Yeni Kocaeli scraping tamamlandı, tüm haberlerin konumu/geocode'u işlendi ve mükerrerler temizlendi!");

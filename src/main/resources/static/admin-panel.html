@@ -121,6 +121,10 @@
   <p style="color: #7f8c8d; margin-bottom: 30px;">🌍 OpenStreetMap + Nominatim (Ücretsiz Geocoding)</p>
 
   <h3 style="color: #2c3e50; margin-bottom: 15px; text-align: left;">📋 ADIM 1: Haberleri Topla (En Spesifik Konum Seçilir)</h3>
+  <div style="margin-bottom: 15px; text-align: left;">
+    <label for="daysInput" style="font-weight: bold; color: #2c3e50;">Kaç günlük haber çekilsin?</label>
+    <input type="number" id="daysInput" value="3" min="1" max="30" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc; width: 60px; margin-left: 10px;">
+  </div>
   <button id="tetikleBtn">Botları Ateşle 🔥</button>
 
   <h3 style="color: #2c3e50; margin-top: 20px; margin-bottom: 15px; text-align: left;">📍 ADIM 2: Konumları İşle</h3>
@@ -182,7 +186,8 @@
 
     // Spring Boot Backend'ine POST isteği atıyoruz
     // Not: Spring Boot'un localhost:8080 portunda çalıştığından emin ol.
-    fetch('http://localhost:8080/api/haberler/scrape-tetikle', {
+    const days = document.getElementById('daysInput').value;
+    fetch(`http://localhost:8080/api/haberler/scrape-tetikle?days=${days}`, {
       method: 'POST'
     })
             .then(response => {
