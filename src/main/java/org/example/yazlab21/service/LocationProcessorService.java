@@ -257,6 +257,14 @@ public class LocationProcessorService {
                             isSameEvent = true;
                             log.info("⚠️ ÖZEL EŞLEŞME YAKALANDI (Başiskele Sıvı Kazası): '{}' ve '{}'", haber1.getBaslik(), haber2.getBaslik());
                         }
+
+                        boolean kaza1_tunel = (b1.contains("tünel") || i1.contains("tünel")) && (b1.contains("kaza") || i1.contains("kaza") || b1.contains("çarp") || i1.contains("çarp"));
+                        boolean kaza2_tunel = (b2.contains("tünel") || i2.contains("tünel")) && (b2.contains("kaza") || i2.contains("kaza") || b2.contains("çarp") || i2.contains("çarp"));
+
+                        if (!isSameEvent && kaza1_tunel && kaza2_tunel) {
+                            isSameEvent = true;
+                            log.info("⚠️ ÖZEL EŞLEŞME YAKALANDI (Tünel Kazası): '{}' ve '{}'", haber1.getBaslik(), haber2.getBaslik());
+                        }
                     }
 
                     if (isSameEvent) {
