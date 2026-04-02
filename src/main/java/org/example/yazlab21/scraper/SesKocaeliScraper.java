@@ -186,8 +186,7 @@ public class SesKocaeliScraper {
         boolean itfaiyeMudahalesi = kelimeler.contains(" itfaiye ") || kelimeler.contains(" söndürüldü ") || safMetin.contains("dumanlar yükseldi") || safMetin.contains("kül oldu");
         if (yanginEylemi && itfaiyeMudahalesi && !safMetin.contains("ateş açtı") && !kelimeler.contains(" silah ")) return "Yangın";
 
-        boolean maddeVarMi = kelimeler.contains(" uyuşturucu ") || kelimeler.contains(" eroin ") || kelimeler.contains(" kokain ") || kelimeler.contains(" esrar ") || kelimeler.contains(" metamfetamin ") || kelimeler.contains(" bonzai ") || kelimeler.contains(" zehir tacir ");
-        if (maddeVarMi && (kelimeler.contains(" operasyon ") || safMetin.contains("ele geçirildi") || kelimeler.contains(" yakalandı ") || kelimeler.contains(" gözaltı "))) return "Uyuşturucu";
+
 
         boolean hirsizlikEylemi = kelimeler.contains(" hırsız ") || kelimeler.contains(" hırsızlık ") || kelimeler.contains(" soygun ") || kelimeler.contains(" gasp ")  || kelimeler.contains(" yankesici ");
         boolean calmaEylemi = safMetin.contains(" çaldı ") || kelimeler.contains(" çalındı ") || kelimeler.contains(" gasp ");

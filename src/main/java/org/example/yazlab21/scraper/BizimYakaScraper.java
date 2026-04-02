@@ -176,10 +176,7 @@ public class BizimYakaScraper {
             return "Yangın";
         }
 
-        boolean maddeVarMi = kelimeler.contains(" uyuşturucu ") || kelimeler.contains(" eroin ") || kelimeler.contains(" kokain ") || kelimeler.contains(" esrar ") || kelimeler.contains(" metamfetamin ") || kelimeler.contains(" bonzai ");
-        if (maddeVarMi && (kelimeler.contains(" operasyon ") || safMetin.contains("ele geçirildi") || kelimeler.contains(" yakalandı ") || kelimeler.contains(" gözaltına "))) {
-            return "Uyuşturucu";
-        }
+
 
 
         boolean hirsizlikEylemi = kelimeler.contains(" hırsız ") || kelimeler.contains(" hırsızlık ") || kelimeler.contains(" soygun ") || kelimeler.contains(" gasp ") || safMetin.contains("çelik kasa");
