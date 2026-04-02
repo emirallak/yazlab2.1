@@ -34,8 +34,7 @@ public class LocationProcessorService {
      *  1. Başlık + içerik üzerinde extractAndGeocodeAll() ile TÜM konumlar çıkarılır.
      *  2. Benzer haberlerden daha spesifik konum varsa önceliklendirilir.
      *  3. Geçerli koordinat bulunan ilk (en spesifik) konum habere yazılır.
-     *  4. Hiç koordinat bulunamazsa haber enlem/boylam OLMADAN kaydedilir
-     *     → haritada gösterilmez (fallback İzmit KALDIRILDI).
+     *  4. Hiç koordinat bulunamazsa haber enlem/boylam OLMADAN kaydedilir → haritada gösterilmez.
      */
     public Haber processLocationForNews(Haber haber) {
         if (haber == null) return null;
@@ -43,23 +42,19 @@ public class LocationProcessorService {
         try {
             String aramaMetni = buildSearchText(haber);
 
-            // YENİ: Tüm konumları geocoding ile birlikte getir
             List<GeocodingService.LocationCoordinates> tumKonumlar =
                     geocodingService.extractAndGeocodeAll(aramaMetni);
 
             if (tumKonumlar.isEmpty()) {
                 log.warn("⚠️  Konum bulunamadı, haber haritada gösterilmeyecek: '{}'", haber.getBaslik());
-                // Enlem/boylam sıfırlanır → haritada gizlenir
                 clearCoordinates(haber);
                 haber.setKonumMetni(null);
                 return haber;
             }
 
-            // Benzer haberlerin konumlarıyla en spesifik olanı seç
             GeocodingService.LocationCoordinates secilenKonum =
                     findMostSpecificCoordinate(haber, tumKonumlar);
 
-            // Habere yaz
             haber.setKonumMetni(secilenKonum.locationName);
             haber.setEnlem(secilenKonum.latitude);
             haber.setBoylam(secilenKonum.longitude);
@@ -76,14 +71,12 @@ public class LocationProcessorService {
     }
 
     /**
-     * Arama metnini oluşturur. Başlık iki kez eklenir çünkü
-     * başlıkta geçen konum adı genellikle daha güvenilirdir ve
-     * regex eşleşme olasılığını artırır.
+     * Arama metnini oluşturur.
+     * Başlık iki kez eklenir — başlıktaki konum adı genellikle daha güvenilirdir.
      */
     private String buildSearchText(Haber haber) {
         String baslik = haber.getBaslik() != null ? haber.getBaslik() : "";
         String icerik = haber.getIcerik() != null ? haber.getIcerik() : "";
-        // Başlığı öne al ve iki kez geçir → ağırlık kazansın
         return baslik + " " + baslik + " " + icerik;
     }
 
@@ -96,7 +89,6 @@ public class LocationProcessorService {
             List<GeocodingService.LocationCoordinates> mevcutKonumlar) {
 
         try {
-            // Benzer haberlerin konum metinlerini topla
             List<Haber> benzerHaberler = haberRepository.findByHaberTuru(haber.getHaberTuru())
                     .stream()
                     .filter(h -> h.getId() != null && !h.getId().equals(haber.getId()))
@@ -106,9 +98,8 @@ public class LocationProcessorService {
                     .collect(Collectors.toList());
 
             if (!benzerHaberler.isEmpty()) {
-                // Benzer haberlerden koordinatı olan ve spesifik olanı bul
                 Optional<GeocodingService.LocationCoordinates> benzerKonum = benzerHaberler.stream()
-                        .filter(h -> hasCoordinates(h))
+                        .filter(this::hasCoordinates)
                         .map(h -> new GeocodingService.LocationCoordinates(
                                 h.getKonumMetni(), h.getEnlem(), h.getBoylam(), h.getKonumMetni()))
                         .max(Comparator.comparingInt(k -> getSpecificityScore(k.locationName)));
@@ -130,7 +121,6 @@ public class LocationProcessorService {
             log.warn("Benzer haber konumu aramasında hata: {}", e.getMessage());
         }
 
-        // Mevcut konumlardan en spesifik olanı döndür
         return mevcutKonumlar.stream()
                 .max(Comparator.comparingInt(k -> getSpecificityScore(k.locationName)))
                 .orElse(mevcutKonumlar.get(0));
@@ -186,7 +176,7 @@ public class LocationProcessorService {
         }
     }
 
-    // ─── Sorgulama Metotları ────────────────────────────────────────────────
+    // ─── Sorgulama Metotları ─────────────────────────────────────────────────
 
     /** Sadece koordinatı olan haberleri döndürür (harita için). */
     public List<Haber> getNewsWithLocations() {
@@ -214,36 +204,51 @@ public class LocationProcessorService {
         return similarityService.calculateSimilarity(title1, title2);
     }
 
-    // ─── Spesifiklik Skoru ──────────────────────────────────────────────────
+    // ─── Spesifiklik Skoru ───────────────────────────────────────────────────
 
-    /**
-     * Konum metninin ne kadar spesifik olduğunu puanlar.
-     * Yüksek puan = daha spesifik = tercih edilir.
-     *
-     * Mahalle/Sokak/Cadde > Bulvar/Yol > İlçe/Merkez
-     */
     public int getSpecificityScore(String location) {
         if (location == null || location.trim().isEmpty()) return 0;
         int score = 0;
         String loc = location.toLowerCase();
 
+        // Yeni Eklenen Yüksek Öncelikli Yer Tipleri (Nokta atışı POI)
+        if (loc.contains("spor salonu"))                       score += 150;
+        if (loc.contains("düğün salonu"))                      score += 150;
+        if (loc.contains("kültür merkezi"))                    score += 150;
+        if (loc.contains("gençlik merkezi"))                   score += 150;
+        if (loc.contains("polis merkezi") || loc.contains("karakolu")) score += 150;
+        if (loc.contains("hastanesi") || loc.contains("okulu"))score += 150;
+        if (loc.contains("kongre merkezi"))                   score += 150;
+        
+        // Standart Adres Tipleri
         if (loc.contains("mahalle") || loc.contains("mah."))  score += 100;
         if (loc.contains("sokak")   || loc.contains("sok."))  score += 100;
         if (loc.contains("cadde")   || loc.contains("cad."))  score += 100;
         if (loc.contains("bulvar"))                            score += 80;
+        if (loc.contains("tünel")   || loc.contains("tüneli")) score += 80;
+        if (loc.contains("viyadük") || loc.contains("viyadüğü")) score += 80;
+        if (loc.contains("gişe")    || loc.contains("gişeler")) score += 80;
+        if (loc.contains("köprü")   || loc.contains("köprüsü"))score += 80;
+        if (loc.contains("kavşak")  || loc.contains("kavşağı"))score += 80;
+        if (loc.contains("meydan")  || loc.contains("meydanı"))score += 80;
+        if (loc.contains("tesis")   || loc.contains("tesisi")) score += 70;
         if (loc.contains("sanayi"))                            score += 70;
         if (loc.contains("mevki"))                             score += 60;
         if (loc.contains("yolu")    || loc.contains("yol"))   score += 50;
         if (loc.contains("köy"))                               score += 40;
         if (loc.contains("ilçe")    || loc.contains("merkez"))score += 20;
 
-        // Uzun isimler genelde daha spesifiktir
-        score += location.length();
+        // Çok uzun metinler büyük ihtimalle yanışlıkla çekilmiş cümlelerdir (örn: Sıkışan tır sürücüsü yaralandı), uzunluğa göre kısıtlamalı puan
+        int kelimeSayisi = location.split("\\s+").length;
+        if (kelimeSayisi > 3) {
+            score -= (kelimeSayisi - 3) * 10; // Uzun cümleleri cezalandır
+        }
 
+        score += Math.min(location.length(), 30); // Uzunluk bonusunu sınırlandır
         return score;
     }
 
-    // ─── Deduplication ──────────────────────────────────────────────────────
+    // ─── Deduplication ───────────────────────────────────────────────────────
 
     @Scheduled(cron = "0 0 * * * *")
     public void scheduledDeduplication() {
@@ -267,7 +272,6 @@ public class LocationProcessorService {
                     Haber haber2 = allNews.get(j);
                     if (toDeleteIds.contains(haber2.getId())) continue;
 
-                    // Farklı kategorideki haberler karşılaştırılmaz
                     if (haber1.getHaberTuru() == null ||
                             !haber1.getHaberTuru().equals(haber2.getHaberTuru())) continue;
 
@@ -288,7 +292,6 @@ public class LocationProcessorService {
                                     (titleCosine >= 0.40 && contentSimilarity >= 0.40) ||
                                     (b1.length() > 5 && b2.length() > 5 && (b1.contains(b2) || b2.contains(b1)));
 
-                    // Özel durum: trafik kazası eşleşmeleri
                     if (!isSameEvent && "Trafik Kazası".equals(haber1.getHaberTuru())) {
                         isSameEvent = checkSpecialTrafficAccident(haber1, haber2, b1, b2);
                     }
@@ -354,7 +357,6 @@ public class LocationProcessorService {
             reason = "Konum kalitesi: " + score2 + " > " + score1;
         }
 
-        // Eşitse daha eski olanı tut
         if (score1 == score2 && haber1.getId().compareTo(haber2.getId()) >= 0) {
             keep = haber2; remove = haber1;
             reason = "Eşit kalite — eski kayıt tutuldu";
@@ -389,7 +391,7 @@ public class LocationProcessorService {
         return updated;
     }
 
-    // ─── Yardımcı Metotlar ──────────────────────────────────────────────────
+    // ─── Yardımcı Metotlar ───────────────────────────────────────────────────
 
     private double getLocationQuality(Haber haber) {
         if (haber == null) return 0;
@@ -404,7 +406,6 @@ public class LocationProcessorService {
                 && haber.getBoylam() != null && haber.getBoylam() != 0;
     }
 
-    /** Haberin enlem/boylamını sıfırlar (haritada gizlemek için). */
     private void clearCoordinates(Haber haber) {
         haber.setEnlem(null);
         haber.setBoylam(null);
