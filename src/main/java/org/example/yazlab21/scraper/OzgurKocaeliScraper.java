@@ -32,50 +32,53 @@ public class OzgurKocaeliScraper {
         LocalDateTime limitTarih = LocalDateTime.now().minusDays(days).withHour(0).withMinute(0).withSecond(0).withNano(0);
         DateTimeFormatter logFormat = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
 
-        System.out.println("📅 " + days + " Gün Sınırı: " + limitTarih.format(logFormat));
-        System.out.println("🤖 Selenium WebDriver Başlatılıyor...");
+        System.out.println(" " + days + " Gün Sınırı: " + limitTarih.format(logFormat));
+        System.out.println(" Selenium WebDriver Başlatılıyor...");
 
-        // 1. Chrome'u Arka Planda Hazırla
+
         WebDriverManager.chromedriver().setup();
         ChromeOptions options = new ChromeOptions();
-        options.addArguments("--headless=new"); // Ekranda pencere açılmasın, gizli çalışsın
+        options.addArguments("--headless=new");
         options.addArguments("--disable-gpu");
         options.addArguments("--window-size=1920,1080");
-        options.addArguments("--disable-blink-features=AutomationControlled"); // Cloudflare'i kandırma ayarı
+        options.addArguments("--disable-blink-features=AutomationControlled");
         options.addArguments("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
         WebDriver driver = new ChromeDriver(options);
 
-        // 2. TARANACAK KATEGORİLER LİSTESİ
+
         List<String> kategoriLinkleri = Arrays.asList(
                 "https://www.ozgurkocaeli.com.tr/arsiv/kocaeli-haberleri",
                 "https://www.ozgurkocaeli.com.tr/arsiv/kocaeli-asayis-haberleri"
         );
 
-        try {
-            for (String baseUrl : kategoriLinkleri) {
+        try
+        {
+            for (String baseUrl : kategoriLinkleri)
+            {
                 boolean eskiHaberSiniri = false;
                 int sayfaNumarasi = 1;
 
-                // 3. SAYFALANDIRMA (1, 2, 3... diye gider)
-                while (!eskiHaberSiniri && sayfaNumarasi <= 5) {
-                    String url = sayfaNumarasi == 1 ? baseUrl : baseUrl + "/" + sayfaNumarasi;
-                    System.out.println("\n🌍 Özgür Kocaeli Taranıyor (Sayfa " + sayfaNumarasi + "): " + url);
 
-                    // SELENIUM İLE LİSTE SAYFASINA GİR (Cloudflare'i geçmek için 5 saniye bekle)
+                while (!eskiHaberSiniri && sayfaNumarasi <= 5)
+                {
+                    String url = sayfaNumarasi == 1 ? baseUrl : baseUrl + "/" + sayfaNumarasi;
+                    System.out.println("\nÖzgür Kocaeli Taranıyor (Sayfa " + sayfaNumarasi + "): " + url);
+
+
                     driver.get(url);
                     Thread.sleep(500);
 
-                    // Kapı açıldı, sayfanın HTML'ini Jsoup'a ver
+
                     Document document = Jsoup.parse(driver.getPageSource());
                     Elements haberKartlari = document.select(".post");
 
                     if (haberKartlari.isEmpty()) {
-                        System.out.println("⏩ Sayfada haber bulunamadı veya Cloudflare aşılamadı.");
+                        System.out.println(" Sayfada haber bulunamadı veya Cloudflare aşılamadı.");
                         break;
                     }
 
-                    System.out.println("📊 Sayfada " + haberKartlari.size() + " haber kartı bulundu.");
+                    System.out.println("Sayfada " + haberKartlari.size() + " haber kartı bulundu.");
 
                     for (Element kart : haberKartlari) {
                         Element aTag = kart.select("h3.b a").first();
@@ -88,21 +91,21 @@ public class OzgurKocaeliScraper {
                         }
                         String ozet = kart.select("p.cut-2").text();
 
-                        // ZATEN VAR MI KONTROLÜ
+
                         if (haberRepository.existsByLink(link)) continue;
 
-                        // AKILLI FİLTRE
+
                         String tur = haberTuruBelirle(baslik, ozet);
                         if (tur == null) continue;
 
-                        // SELENIUM İLE HABERİN İÇİNE GİR
+
                         try {
-                            Thread.sleep(500); // Çok hızlı istek atıp ban yemeyelim
+                            Thread.sleep(500);
                             driver.get(link);
 
                             Document detay = Jsoup.parse(driver.getPageSource());
 
-                            // Daktilo Altyapısı Tarih Formatı
+
                             String tarihStr = detay.select("meta[name='datePublished']").attr("content");
                             if (tarihStr.isEmpty()) tarihStr = detay.select("meta[property='article:published_time']").attr("content");
 
@@ -114,20 +117,20 @@ public class OzgurKocaeliScraper {
                                     haberZamani = LocalDateTime.now();
                                 }
 
-                                // Gün Sınırı Filtresi
+
                                 if (haberZamani.isBefore(limitTarih)) {
-                                    System.out.println("⏳ [ESKİ HABER SINIRI] " + haberZamani.format(logFormat) + " -> Sonraki kategoriye geçiliyor.");
+                                    System.out.println(" [ESKİ HABER SINIRI] " + haberZamani.format(logFormat) + " -> Sonraki kategoriye geçiliyor.");
                                     eskiHaberSiniri = true;
                                     break;
                                 }
 
                                 String tamIcerik = ContentExtractor.extractMainText(
                                         detay,
-                                        Arrays.asList(".article-body", "article .article-body", "article", ".news-content", ".post-content", ".content"),
+                                        Arrays.asList("#main-text", "[property='articleBody']", ".word", ".article-body", "article .article-body", "article", ".news-content", ".post-content", ".content"),
                                         ozet
                                 );
 
-                                // VERİTABANINA KAYIT
+
                                 Haber yeniHaber = Haber.builder()
                                         .baslik(baslik)
                                         .icerik(tamIcerik)
@@ -138,64 +141,61 @@ public class OzgurKocaeliScraper {
                                         .build();
 
                                 haberRepository.save(yeniHaber);
-                                System.out.println("✅ KAYDEDİLDİ [" + tur + "] : " + baslik);
+                                System.out.println(" KAYDEDİLDİ [" + tur + "] : " + baslik);
                             }
 
                         } catch (Exception e) {
-                            System.err.println("❌ Detay çekilemedi: " + link);
+                            System.err.println(" Detay çekilemedi: " + link);
                         }
                     }
 
                     if (eskiHaberSiniri) {
-                        break; // Eski habere ulaştıysak sayfa döngüsünden çık, diğer kategoriye geç
+                        break;
                     }
 
                     sayfaNumarasi++;
                 }
             }
         } catch (Exception e) {
-            System.err.println("❌ Özgür Kocaeli Taraması Çöktü: " + e.getMessage());
+            System.err.println(" Özgür Kocaeli Taraması Çöktü: " + e.getMessage());
         } finally {
-            // ÇOK ÖNEMLİ: Tarama bitince arka plandaki Chrome'u kapatıyoruz ki RAM şişmesin!
+
             if (driver != null) {
                 driver.quit();
-                System.out.println("🧹 WebDriver başarıyla kapatıldı.");
+                System.out.println(" WebDriver başarıyla kapatıldı.");
             }
         }
 
-        System.out.println("\n🏁 Özgür Kocaeli işlemi tamamlandı.");
+        System.out.println("\n Özgür Kocaeli işlemi tamamlandı.");
     }
 
     private String haberTuruBelirle(String baslik, String icerik) {
         String safMetin = (baslik + " " + icerik).toLowerCase(new Locale("tr"));
-        String kelimeler = " " + safMetin.replaceAll("[^a-zğüşıöç]", " ") + " ";
 
         if (safMetin.contains("mahkeme") || safMetin.contains("duruşma") || safMetin.contains("sanık") ||
                 safMetin.contains("yargılan") || safMetin.contains("hakim ") || safMetin.contains("dava") ||
                 safMetin.contains("cezaev") || safMetin.contains("müebbet") || safMetin.contains("beraat") ||
-                kelimeler.contains(" mesaj ") ||
-                kelimeler.contains(" maç ") || kelimeler.contains(" şampiyon ") || kelimeler.contains(" turnuva ") ||
-                kelimeler.contains(" pkk ") || kelimeler.contains(" fetö ") || kelimeler.contains(" deaş ") ||
-                kelimeler.contains(" yatırım ")) {
+                safMetin.contains(" mesaj ") ||
+                safMetin.contains(" maç ") || safMetin.contains(" şampiyon ") || safMetin.contains(" turnuva ") ||
+                safMetin.contains(" pkk ") || safMetin.contains(" fetö ") || safMetin.contains(" deaş ") ||
+                safMetin.contains(" yatırım ")) {
             return null;
         }
 
-        boolean kazaEylemi = kelimeler.contains(" kaza ") || safMetin.contains("çarpıştı") || safMetin.contains("takla attı") || safMetin.contains("şarampole") || safMetin.contains("devrildi");
-        boolean motorluArac = kelimeler.contains(" araç ") || kelimeler.contains(" otomobil ") || kelimeler.contains(" motosiklet ") || kelimeler.contains(" otobüs ") || kelimeler.contains(" kamyon ") || kelimeler.contains(" tır ") || kelimeler.contains(" sürücü ");
-        if (kazaEylemi && motorluArac && !safMetin.contains("iş kazası")) return "Trafik Kazası";
+        boolean kazaEylemi = safMetin.contains("kaza") || safMetin.contains("çarpıştı") || safMetin.contains("takla") || safMetin.contains("şarampole") || safMetin.contains("devrildi") || safMetin.contains("zincirleme");
+        boolean motorluArac = safMetin.contains("araç") || safMetin.contains("otomobil") || safMetin.contains("motor") || safMetin.contains("otobüs") || safMetin.contains("kamyon") || safMetin.contains("tır") || safMetin.contains("sürücü") || safMetin.contains("yolcu");
+        if ((kazaEylemi && motorluArac) || safMetin.contains("feci kaza") || safMetin.contains("trafik kazası")) return "Trafik Kazası";
 
-        boolean yanginEylemi = kelimeler.contains(" yangın ") || safMetin.contains("alev alev") || safMetin.contains("kundaklandı");
-        boolean itfaiyeMudahalesi = kelimeler.contains(" itfaiye ") || kelimeler.contains(" söndürüldü ") || safMetin.contains("dumanlar yükseldi") || safMetin.contains("kül oldu");
-        if (yanginEylemi && itfaiyeMudahalesi && !safMetin.contains("ateş açtı") && !kelimeler.contains(" silah ")) return "Yangın";
+        boolean yanginEylemi = safMetin.contains("yangın") || safMetin.contains("alev alev") || safMetin.contains("kundak");
+        boolean itfaiyeMudahalesi = safMetin.contains("itfaiye") || safMetin.contains("söndürül") || safMetin.contains("dumanlar") || safMetin.contains("kül oldu");
+        if (yanginEylemi || itfaiyeMudahalesi) return "Yangın";
 
+        boolean hirsizlikEylemi = safMetin.contains("hırsız") || safMetin.contains("soygun") || safMetin.contains("gasp") || safMetin.contains("yankesici") || safMetin.contains("çaldı") || safMetin.contains("çalın");
+        if (hirsizlikEylemi) return "Hırsızlık";
 
-        boolean hirsizlikEylemi = kelimeler.contains(" hırsız ") || kelimeler.contains(" hırsızlık ") || kelimeler.contains(" soygun ") || kelimeler.contains(" gasp ")  || kelimeler.contains(" yankesici ");
-        boolean calmaEylemi = safMetin.contains(" çaldı ") || kelimeler.contains(" çalındı ") || kelimeler.contains(" gasp ");
-        if (hirsizlikEylemi || calmaEylemi) return "Hırsızlık";
+        if (safMetin.contains("elektrik") && safMetin.contains("kesinti")) return "Elektrik Kesintisi";
 
-        if (kelimeler.contains(" elektrik ") && kelimeler.contains(" kesintisi ")) return "Elektrik Kesintisi";
-
-        if (kelimeler.contains(" konser ") || kelimeler.contains(" tiyatro ") || kelimeler.contains(" festival ") || kelimeler.contains(" sergi ") || kelimeler.contains(" kitap fuarı ")) return "Kültürel Etkinlikler";
+        if (safMetin.contains("konser") || safMetin.contains("tiyatro") || safMetin.contains("festival") || safMetin.contains("sergi") || safMetin.contains("kitap fuarı")) return "Kültürel Etkinlikler";
 
         return null;
     }

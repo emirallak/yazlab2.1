@@ -18,7 +18,7 @@ public class LocationProcessorService {
     private final HaberRepository haberRepository;
 
     private static final double SIMILARITY_THRESHOLD = 0.90;
-     private static final java.util.regex.Pattern ROAD_CODE_PATTERN = java.util.regex.Pattern.compile(
+    private static final java.util.regex.Pattern ROAD_CODE_PATTERN = java.util.regex.Pattern.compile(
             "\\b(?:[deo])\\s*-?\\s*\\d{1,4}\\b|\\btem\\b|\\botoyol\\b",
             java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
     private static final java.util.regex.Pattern PLACE_ANCHOR_PATTERN = java.util.regex.Pattern.compile(
@@ -71,6 +71,17 @@ public class LocationProcessorService {
                 clearCoordinates(haber);
                 haber.setKonumMetni(null);
                 return haber;
+            }
+
+            // DINAMİK KONTROL: Google Maps zorunlu "Kocaeli" aramasına rağmen Kocaeli dışı bir koordinat
+            // döndürdüyse (örn. Karaman Devlet Hastanesi), haber o şehre aittir. Tüm adaylarda arıyoruz.
+            boolean isOutOfCity = tumKonumlar.stream()
+                    .anyMatch(k -> !geocodingService.isWithinKocaeliBounds(k.latitude, k.longitude));
+
+            if (isOutOfCity) {
+                log.warn("Dinamik Kocaeli dışı haber saptandı (Farklı şehir lokasyonu var), veritabanından siliniyor: '{}'", haber.getBaslik());
+                haberRepository.delete(haber);
+                return null;
             }
 
             GeocodingService.LocationCoordinates secilenKonum =
@@ -566,3 +577,4 @@ public class LocationProcessorService {
         }
     }
 }
+

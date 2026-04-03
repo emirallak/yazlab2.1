@@ -15,7 +15,6 @@ public class GeocodingService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-
     private final Map<String, LocationCoordinates> geocodeCache = new java.util.concurrent.ConcurrentHashMap<>();
     private final Set<String> negativeCache = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -34,7 +33,7 @@ public class GeocodingService {
         ILCE_MERKEZLERI.put("derince", new LocationCoordinates("Derince", 40.7570, 29.8320, "Derince, Kocaeli, Türkiye", "place", "administrative_area_level_2"));
     }
 
-    @Value("${google.geocoding.api-key}")
+    @Value("${GOOGLE_GEOCODING_API_KEY}")
     private String apiKey;
 
     private static final String GOOGLE_GEOCODING_URL = "https://maps.googleapis.com/maps/api/geocode/json";
@@ -43,7 +42,7 @@ public class GeocodingService {
     private static final List<String> BILINEN_ILCELER = Arrays.asList(
             "İzmit", "Gebze", "Darıca", "Körfez", "Başiskele", "Kartepe",
             "Çayırova", "Dilovası", "Gölcük", "Kandıra", "Karamürsel",
-            "Derince", "Karabaş", "Arslanbey", "Hereke", "Tavşantepe"
+            "Derince"
     );
 
     private static final Set<String> GURULTU_KELIMELERI = new HashSet<>(Arrays.asList(
@@ -58,13 +57,11 @@ public class GeocodingService {
             "Dün", "Bugün", "Yarın", "Hafta"
     };
 
-
     private static final Pattern KESME_BULUNMA = Pattern.compile(
             "([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ0-9\\s\\-]{1,60}?)" +
                     "(?:'de|'da|'te|'ta|'nde|'nda|'de|'da|'te|'ta|'nde|'nda)",
             Pattern.UNICODE_CHARACTER_CLASS
     );
-
 
     private static final Pattern YER_TIPI = Pattern.compile(
             "([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ0-9\\s\\-]{1,50}?)" +
@@ -75,7 +72,6 @@ public class GeocodingService {
                     "|Gişeleri|Gişesi|Gişeler|Viyadüğü|Viyadük|Gişelerinde|Yolu|Yol)",
             Pattern.UNICODE_CHARACTER_CLASS
     );
-
 
     private static final Pattern ILCE_KALIBI = Pattern.compile("([A-ZÇĞİÖŞÜ][a-zçğıöşüA-ZÇĞİÖŞÜ]{2,30})" + "\\s+(?:ilçesinde|semtinde|bölgesinde|mahallesinde|köyünde)",
             Pattern.UNICODE_CHARACTER_CLASS);
@@ -109,7 +105,6 @@ public class GeocodingService {
 
             LocationCoordinates koordinat = null;
 
-
             if (!districtsInText.isEmpty() && !BILINEN_ILCELER.contains(aday))
             {
                 for (String ilce : districtsInText) {
@@ -120,7 +115,6 @@ public class GeocodingService {
                     }
                 }
             }
-
 
             if (koordinat == null || !koordinat.isValid())
             {
@@ -144,15 +138,13 @@ public class GeocodingService {
         Set<String> adaySet = new LinkedHashSet<>();
 
         Matcher m1 = KESME_BULUNMA.matcher(text);
-        while (m1.find())
-        {
+        while (m1.find()) {
             String aday = temizle(m1.group(1));
             if (gecerliMi(aday)) adaySet.add(aday);
         }
 
         Matcher m2 = YER_TIPI.matcher(text);
-        while (m2.find())
-        {
+        while (m2.find()) {
             String tamIfade = temizle(m2.group(0));
             String sadecePrefiks = temizle(m2.group(1));
             if (gecerliMi(tamIfade)) adaySet.add(tamIfade);
@@ -160,16 +152,13 @@ public class GeocodingService {
         }
 
         Matcher m3 = ILCE_KALIBI.matcher(text);
-        while (m3.find())
-        {
+        while (m3.find()) {
             String aday = temizle(m3.group(1));
             if (gecerliMi(aday)) adaySet.add(aday);
         }
 
-        for (String ilce : BILINEN_ILCELER)
-        {
-            if (text.contains(ilce))
-            {
+        for (String ilce : BILINEN_ILCELER) {
+            if (text.contains(ilce)) {
                 adaySet.add(ilce);
             }
         }
@@ -177,68 +166,54 @@ public class GeocodingService {
         return new ArrayList<>(adaySet);
     }
 
-    public LocationCoordinates getCoordinates(String locationName)
-    {
+    public LocationCoordinates getCoordinates(String locationName) {
         if (locationName == null || locationName.trim().isEmpty()) return null;
         return callGoogleGeocodingAPI(locationName.trim() + ", " + REGION_CONTEXT, locationName);
     }
 
     @Deprecated
-    public LocationCoordinates getKocaeliLocationCoordinates(String locationName)
-    {
+    public LocationCoordinates getKocaeliLocationCoordinates(String locationName) {
         return getCoordinates(locationName);
     }
 
     @Deprecated
-    public String extractLocationFromText(String text)
-    {
+    public String extractLocationFromText(String text) {
         List<String> adaylar = extractAllLocationCandidates(text);
         return adaylar.isEmpty() ? null : adaylar.get(0);
     }
 
-
-
     private static final int MAX_RETRY = 3;
 
     @SuppressWarnings("unchecked")
-    private LocationCoordinates callGoogleGeocodingAPI(String searchQuery, String originalName)
-    {
-        if (originalName != null && ILCE_MERKEZLERI.containsKey(originalName.toLowerCase().trim()))
-        {
+    private LocationCoordinates callGoogleGeocodingAPI(String searchQuery, String originalName) {
+        if (originalName != null && ILCE_MERKEZLERI.containsKey(originalName.toLowerCase().trim())) {
             return ILCE_MERKEZLERI.get(originalName.toLowerCase().trim());
         }
 
-        if (geocodeCache.containsKey(searchQuery))
-        {
+        if (geocodeCache.containsKey(searchQuery)) {
             return geocodeCache.get(searchQuery);
         }
-        if (negativeCache.contains(searchQuery))
-        {
+        if (negativeCache.contains(searchQuery)) {
             return null;
         }
 
-        for (int deneme = 1; deneme <= MAX_RETRY; deneme++)
-        {
-            try
-            {
+        for (int deneme = 1; deneme <= MAX_RETRY; deneme++) {
+            try {
                 String url = UriComponentsBuilder.fromUriString(GOOGLE_GEOCODING_URL).queryParam("address", searchQuery).queryParam("key", apiKey).queryParam("language", "tr").queryParam("region", "tr").build().toUriString();
 
                 org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
                 headers.set("Accept-Language", "tr,en");
-                org.springframework.http.HttpEntity<String> entity =
-                        new org.springframework.http.HttpEntity<>(headers);
+                org.springframework.http.HttpEntity<String> entity = new org.springframework.http.HttpEntity<>(headers);
 
                 org.springframework.http.ResponseEntity<Map> response = restTemplate.exchange(url, org.springframework.http.HttpMethod.GET, entity, Map.class);
 
                 Map<String, Object> body = response.getBody();
-                if (body == null)
-                {
+                if (body == null) {
                     log.warn("Boş yanıt → '{}'", searchQuery);
                     return null;
                 }
 
                 String status = (String) body.get("status");
-
 
                 if ("OK".equals(status)) {
                     List<Map<String, Object>> results = (List<Map<String, Object>>) body.get("results");
@@ -248,8 +223,8 @@ public class GeocodingService {
                     }
 
                     Map<String, Object> firstResult = results.get(0);
-                    Map<String, Object> geometry    = (Map<String, Object>) firstResult.get("geometry");
-                    Map<String, Object> location    = (Map<String, Object>) geometry.get("location");
+                    Map<String, Object> geometry = (Map<String, Object>) firstResult.get("geometry");
+                    Map<String, Object> location = (Map<String, Object>) geometry.get("location");
 
                     double lat = ((Number) location.get("lat")).doubleValue();
                     double lon = ((Number) location.get("lng")).doubleValue();
@@ -258,22 +233,26 @@ public class GeocodingService {
                     List<String> types = (List<String>) firstResult.get("types");
                     String placeType = (types != null && !types.isEmpty()) ? types.get(0) : "unknown";
 
-
-                    if (!isWithinKocaeliBounds(lat, lon))
-                    {
-                        log.warn("Kocaeli dışında koordinat, atlanıyor → '{}' ({}, {})",
-                                searchQuery, lat, lon);
+                    // =========================================================================================
+                    // 🛡️ YENİ EKLENEN KALKAN: JENERİK SONUÇ ENGELLEYİCİ
+                    // Eğer nokta atışı bulamadıysa ve koskoca İl/Ülke merkezini dönüyorsa reddet!
+                    // =========================================================================================
+                    if ("administrative_area_level_1".equals(placeType) || "country".equals(placeType)) {
+                        log.warn("Google tam adresi bulamadı, genel şehir/ülke koordinatı verdi. Reddedildi! → İstek: '{}' | Tip: {}", searchQuery, placeType);
                         negativeCache.add(searchQuery);
                         return null;
                     }
 
-                    log.info("Koordinat bulundu → '{}' : ({}, {}) [{}]",
-                            searchQuery, lat, lon, placeType);
+                    if (!isWithinKocaeliBounds(lat, lon)) {
+                        log.warn("Kocaeli dışında koordinat, haber silinmesi için servis tarafından saptanacak → '{}' ({}, {})", searchQuery, lat, lon);
+                        // negativeCache.add(searchQuery); -> Do NOT suppress it, return it so the main service knows it's an outside place.
+                    }
+
+                    log.info("Koordinat bulundu → '{}' : ({}, {}) [{}]", searchQuery, lat, lon, placeType);
                     LocationCoordinates result = new LocationCoordinates(originalName, lat, lon, formattedAddress, "place", placeType);
                     geocodeCache.put(searchQuery, result);
                     return result;
                 }
-
 
                 if ("ZERO_RESULTS".equals(status)) {
                     log.warn(" Sonuç bulunamadı (ZERO_RESULTS) → '{}'", searchQuery);
@@ -281,27 +260,20 @@ public class GeocodingService {
                     return null;
                 }
 
-
                 if ("OVER_QUERY_LIMIT".equals(status) || "UNKNOWN_ERROR".equals(status)) {
                     long bekleme = (long) Math.pow(2, deneme) * 2000L;
-                    log.warn("{} hatası (deneme {}/{}), {}ms bekleniyor → '{}'",
-                            status, deneme, MAX_RETRY, bekleme, searchQuery);
+                    log.warn("{} hatası (deneme {}/{}), {}ms bekleniyor → '{}'", status, deneme, MAX_RETRY, bekleme, searchQuery);
                     Thread.sleep(bekleme);
                     continue;
                 }
 
-
                 log.error("Google API hatası [{}] → '{}'", status, searchQuery);
                 return null;
 
-            }
-            catch (InterruptedException ie)
-            {
+            } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 return null;
-            }
-            catch (Exception e)
-            {
+            } catch (Exception e) {
                 log.error("Google Geocoding API hatası ('{}') : {}", searchQuery, e.getMessage());
                 if (deneme == MAX_RETRY) return null;
             }
@@ -309,21 +281,15 @@ public class GeocodingService {
         return null;
     }
 
-
-    private boolean isWithinKocaeliBounds(double lat, double lon)
-    {
+    public boolean isWithinKocaeliBounds(double lat, double lon) {
         return lat >= 40.40 && lat <= 41.25 && lon >= 29.25 && lon <= 30.85;
     }
 
-
-
-    private String temizle(String s)
-    {
+    private String temizle(String s) {
         return s == null ? "" : s.trim().replaceAll("\\s{2,}", " ");
     }
 
-    private boolean gecerliMi(String s)
-    {
+    private boolean gecerliMi(String s) {
         if (s == null || s.length() < 3) return false;
         if (s.length() > 50) return false;
         if (GURULTU_KELIMELERI.contains(s)) return false;
@@ -333,11 +299,7 @@ public class GeocodingService {
         return true;
     }
 
-
-
-    public static class LocationCoordinates
-    {
-
+    public static class LocationCoordinates {
         public final String locationName;
         public final double latitude;
         public final double longitude;
@@ -345,34 +307,27 @@ public class GeocodingService {
         public final String osmClass;
         public final String osmType;
 
-        public LocationCoordinates(String locationName, double latitude, double longitude, String formattedAddress, String osmClass, String osmType)
-        {
-            this.locationName     = locationName;
-            this.latitude         = latitude;
-            this.longitude        = longitude;
+        public LocationCoordinates(String locationName, double latitude, double longitude, String formattedAddress, String osmClass, String osmType) {
+            this.locationName = locationName;
+            this.latitude = latitude;
+            this.longitude = longitude;
             this.formattedAddress = formattedAddress;
-            this.osmClass         = osmClass;
-            this.osmType          = osmType;
+            this.osmClass = osmClass;
+            this.osmType = osmType;
         }
 
-
-        public LocationCoordinates(String locationName, double latitude, double longitude,
-                                   String formattedAddress) {
+        public LocationCoordinates(String locationName, double latitude, double longitude, String formattedAddress) {
             this(locationName, latitude, longitude, formattedAddress, "", "");
         }
 
-
-        public boolean isValid()
-        {
+        public boolean isValid() {
             return latitude != 0.0 && longitude != 0.0;
         }
 
         @Override
-        public String toString()
-        {
+        public String toString() {
             return String.format("LocationCoordinates{name='%s', lat=%.6f, lon=%.6f, type='%s/%s'}",
                     locationName, latitude, longitude, osmClass, osmType);
         }
     }
 }
-
