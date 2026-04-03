@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Haber Botu Kontrol Paneli</title>
+  <title>Sistem Kontrol Paneli</title>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -17,121 +17,157 @@
     .container {
       background-color: white;
       padding: 40px;
-      border-radius: 12px;
-      box-shadow: 0 8px 16px rgba(0,0,0,0.1);
-      text-align: center;
-      width: 400px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      text-align: left;
+      width: 450px;
     }
     h1 {
       color: #2c3e50;
-      font-size: 24px;
-      margin-bottom: 20px;
+      font-size: 22px;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    .subtitle {
+      color: #7f8c8d;
+      margin-bottom: 30px;
+      font-size: 14px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
     }
     button {
-      background-color: #e74c3c;
       color: white;
       border: none;
-      padding: 15px 30px;
-      font-size: 16px;
-      font-weight: bold;
-      border-radius: 8px;
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: 6px;
       cursor: pointer;
-      transition: background-color 0.3s ease, transform 0.1s;
+      transition: background-color 0.2s ease;
       width: 100%;
-      margin-bottom: 10px;
-    }
-    button:hover {
-      background-color: #c0392b;
-    }
-    button:active {
-      transform: scale(0.98);
+      margin-bottom: 15px;
     }
     button:disabled {
-      background-color: #95a5a6;
+      background-color: #bdc3c7 !important;
       cursor: not-allowed;
     }
-    /* ADIM 1 - Kırmızı */
-    #tetikleBtn {
-      background-color: #e74c3c;
-    }
-    #tetikleBtn:hover {
-      background-color: #c0392b;
-    }
-    /* ADIM 2 - Mor */
-    .process-btn {
-      background-color: #9b59b6;
-    }
-    .process-btn:hover {
-      background-color: #8e44ad;
-    }
-    /* ADIM 3 - Mavi */
-    .map-btn {
-      background-color: #3498db;
-    }
-    .map-btn:hover {
+    .btn-primary {
       background-color: #2980b9;
     }
+    .btn-primary:hover:not(:disabled) {
+      background-color: #2471a3;
+    }
+    .btn-secondary {
+      background-color: #27ae60;
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background-color: #229954;
+    }
+    .btn-info {
+      background-color: #8e44ad;
+    }
+    .btn-info:hover:not(:disabled) {
+      background-color: #7d3cb5;
+    }
     h3 {
+      font-size: 13px;
+      margin-bottom: 10px;
+      padding-left: 8px;
+      border-left: 3px solid #3498db;
+      color: #34495e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #f8f9f9;
+      padding: 10px 15px;
+      border-radius: 6px;
+      border: 1px solid #ecf0f1;
+    }
+    .form-group label {
       font-size: 14px;
-      margin-bottom: 12px;
-      padding-left: 10px;
-      border-left: 4px solid #2196F3;
+      color: #2c3e50;
+      font-weight: 500;
+    }
+    .form-group input {
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: 1px solid #bdc3c7;
+      width: 70px;
+      text-align: center;
+      font-size: 14px;
     }
     #durum {
       margin-top: 20px;
-      font-size: 14px;
-      font-weight: bold;
-      padding: 15px;
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 12px;
       border-radius: 6px;
-      display: none; /* Başlangıçta gizli */
+      display: none;
     }
     .loading {
-      background-color: #f39c12;
-      color: white;
+      background-color: #fef9e7;
+      color: #f39c12;
+      border: 1px solid #f8c471;
     }
     .success {
-      background-color: #27ae60;
-      color: white;
+      background-color: #eafaf1;
+      color: #27ae60;
+      border: 1px solid #abebc6;
     }
     .error {
-      background-color: #c0392b;
-      color: white;
+      background-color: #fdedec;
+      color: #c0392b;
+      border: 1px solid #f5b7b1;
     }
     .loader {
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid white;
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #f39c12;
       border-radius: 50%;
-      width: 20px;
-      height: 20px;
+      width: 14px;
+      height: 14px;
       animation: spin 1s linear infinite;
       display: inline-block;
       vertical-align: middle;
-      margin-right: 10px;
+      margin-right: 8px;
     }
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+    .section {
+      margin-bottom: 25px;
     }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <h1>🤖 Haber Botu Yönetimi</h1>
-  <p style="color: #7f8c8d; margin-bottom: 30px;">🌍 OpenStreetMap + Nominatim (Ücretsiz Geocoding)</p>
+  <h1>Yönetim Paneli</h1>
+  <div class="subtitle">Sistem Ayarları & Google Maps Entegrasyonu</div>
 
-  <h3 style="color: #2c3e50; margin-bottom: 15px; text-align: left;">📋 ADIM 1: Haberleri Topla (En Spesifik Konum Seçilir)</h3>
-  <div style="margin-bottom: 15px; text-align: left;">
-    <label for="daysInput" style="font-weight: bold; color: #2c3e50;">Kaç günlük haber çekilsin?</label>
-    <input type="number" id="daysInput" value="3" min="1" max="30" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc; width: 60px; margin-left: 10px;">
+  <div class="section">
+    <h3>1. Veri Toplama</h3>
+    <div class="form-group">
+      <label for="daysInput">Zaman Aralığı (Gün)</label>
+      <input type="number" id="daysInput" value="3" min="1" max="30">
+    </div>
+    <button id="tetikleBtn" class="btn-primary">Veri Toplama İşlemini Başlat</button>
   </div>
-  <button id="tetikleBtn">Botları Ateşle 🔥</button>
 
-  <h3 style="color: #2c3e50; margin-top: 20px; margin-bottom: 15px; text-align: left;">📍 ADIM 2: Konumları İşle</h3>
-  <button class="process-btn" onclick="processLocations()">Konumları İşle 📍</button>
+  <div class="section">
+    <h3>2. Konum İşleme (Geocoding)</h3>
+    <button class="btn-secondary" onclick="processLocations()">Konum Verilerini Güncelle</button>
+  </div>
 
-  <h3 style="color: #2c3e50; margin-top: 20px; margin-bottom: 15px; text-align: left;">🗺️ ADIM 3: Haritayı Aç</h3>
-  <button class="map-btn" onclick="openMap()">Haritayı Aç 🗺️</button>
+  <div class="section">
+    <h3>3. Önizleme</h3>
+    <button class="btn-info" onclick="openMap()">Haritayı Görüntüle</button>
+  </div>
 
   <div id="durum"></div>
 </div>
@@ -140,20 +176,18 @@
   const tetikleBtn = document.getElementById('tetikleBtn');
   const durumDiv = document.getElementById('durum');
 
-  // Haritayı aç
   function openMap() {
-    window.open('http://localhost:8080/map', '_blank', 'width=1200,height=800');
+    window.open('/map.html', '_blank', 'width=1200,height=800');
   }
 
-  // Konumları işle
   function processLocations() {
     tetikleBtn.disabled = true;
 
     durumDiv.className = 'loading';
-    durumDiv.innerHTML = '<div class="loader"></div> Tüm haberlerin konumları işleniyor...';
+    durumDiv.innerHTML = '<div class="loader"></div> Google Maps API üzerinden konumlar işleniyor...';
     durumDiv.style.display = 'block';
 
-    fetch('http://localhost:8080/api/scrape/all-locations', {
+    fetch('/api/scrape/all-locations', {
       method: 'POST'
     })
       .then(response => {
@@ -164,11 +198,11 @@
       })
       .then(data => {
         durumDiv.className = 'success';
-        durumDiv.innerHTML = '✅ Tüm haberlerin konumları işlendi! Haritada görmek için "Haritayı Aç" butonuna tıkla.';
+        durumDiv.innerHTML = 'Konum verileri başarıyla işlendi ve güncellendi.';
       })
       .catch(error => {
         durumDiv.className = 'error';
-        durumDiv.innerHTML = '❌ Bir hata oluştu: ' + error.message;
+        durumDiv.innerHTML = 'İşlem sırasında bir hata oluştu: ' + error.message;
       })
       .finally(() => {
         tetikleBtn.disabled = false;
@@ -176,18 +210,16 @@
   }
 
   tetikleBtn.addEventListener('click', () => {
-    // Butonu kilitle ve yükleniyor animasyonu göster
     tetikleBtn.disabled = true;
-    tetikleBtn.innerText = "İşlem Sürüyor...";
+    const originalText = tetikleBtn.innerText;
+    tetikleBtn.innerText = "İşlem sürüyor...";
 
     durumDiv.className = 'loading';
-    durumDiv.innerHTML = '<div class="loader"></div> Siteler sırayla taranıyor, Chrome açılıp kapanabilir. Lütfen bekleyin...';
+    durumDiv.innerHTML = '<div class="loader"></div> Kaynaklardan veri çekiliyor, lütfen bekleyiniz...';
     durumDiv.style.display = 'block';
 
-    // Spring Boot Backend'ine POST isteği atıyoruz
-    // Not: Spring Boot'un localhost:8080 portunda çalıştığından emin ol.
     const days = document.getElementById('daysInput').value;
-    fetch(`http://localhost:8080/api/haberler/scrape-tetikle?days=${days}`, {
+    fetch(`/api/haberler/scrape-tetikle?days=${days}`, {
       method: 'POST'
     })
             .then(response => {
@@ -197,19 +229,16 @@
               return response.text();
             })
             .then(data => {
-              // İşlem başarılı!
               durumDiv.className = 'success';
-              durumDiv.innerHTML = '✅ İşlem Başarılı! Tüm haberler veritabanına kaydedildi.';
+              durumDiv.innerHTML = 'Veri toplama işlemi başarıyla tamamlandı.';
             })
             .catch(error => {
-              // İşlem başarısız!
               durumDiv.className = 'error';
-              durumDiv.innerHTML = '❌ Bir hata oluştu: ' + error.message;
+              durumDiv.innerHTML = 'Bir hata oluştu: ' + error.message;
             })
             .finally(() => {
-              // Butonu eski haline getir
               tetikleBtn.disabled = false;
-              tetikleBtn.innerText = "Botları Ateşle 🔥";
+              tetikleBtn.innerText = originalText;
             });
   });
 </script>

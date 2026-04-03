@@ -21,9 +21,7 @@ public class LocationController {
     private final LocationProcessorService locationProcessorService;
 
 
-    /**
-     * Tüm konum bilgisine sahip haberleri getirir (harita için)
-     */
+
     @GetMapping("/all")
     public ResponseEntity<?> getAllNewsWithLocations() {
         try {
@@ -41,9 +39,6 @@ public class LocationController {
     }
 
 
-    /**
-     * Kategoriye göre konum bilgisine sahip haberleri getirir
-     */
     @GetMapping("/category/{category}")
     public ResponseEntity<?> getNewsLocationsByCategory(@PathVariable String category) {
         try {
@@ -60,9 +55,6 @@ public class LocationController {
         }
     }
 
-    /**
-     * Tüm haberlerin konumlarını işler (batch)
-     */
     @PostMapping("/process-all")
     public ResponseEntity<?> processAllLocations() {
         try {
@@ -74,9 +66,7 @@ public class LocationController {
         }
     }
 
-    /**
-     * Kategoriye göre haberlerin konumlarını işler
-     */
+
     @PostMapping("/process-category/{category}")
     public ResponseEntity<?> processLocationsByCategory(@PathVariable String category) {
         try {
@@ -88,18 +78,14 @@ public class LocationController {
         }
     }
 
-    /**
-     * Harita HTML sayfasını sunar
-     */
+
     @GetMapping("/map")
     public String getMap() {
         return "map";
     }
 
 
-    /**
-     * Benzer haberleri spesifiklik düzeyine göre siler (Yeni mantık)
-     */
+
     @PostMapping("/apply-specific-locations")
     public ResponseEntity<?> applySpecificLocations() {
         try {
@@ -113,11 +99,12 @@ public class LocationController {
         }
     }
 
-    // DTO Sınıfları
+   //lombok dto kısmı burası da
     @lombok.Data
     @lombok.AllArgsConstructor
     @lombok.NoArgsConstructor
-    public static class LocationDTO {
+    public static class LocationDTO
+    {
         private String id;
         private String baslik;
         private String icerik;
@@ -137,9 +124,7 @@ public class LocationController {
     }
 
 
-    /**
-     * Haber'i LocationDTO'ya çevirici
-     */
+
     private LocationDTO convertToLocationDTO(Haber haber) {
         return new LocationDTO(
             haber.getId(),
@@ -154,9 +139,6 @@ public class LocationController {
         );
     }
 
-    /**
-     * DEBUG: Konum bilgisi olmayan haberleri göster
-     */
     @GetMapping("/debug/missing-locations")
     public ResponseEntity<?> getMissingLocations() {
         try {
@@ -181,9 +163,7 @@ public class LocationController {
         }
     }
 
-    /**
-     * DEBUG: Kategoriye göre konum istatistiği
-     */
+
     @GetMapping("/debug/stats-by-category")
     public ResponseEntity<?> getStatsByCategory() {
         try {
@@ -210,9 +190,7 @@ public class LocationController {
         }
     }
 
-    /**
-     * DEBUG: Konum tekstleri göster
-     */
+
     @GetMapping("/debug/location-texts")
     public ResponseEntity<?> getLocationTexts() {
         try {
@@ -237,7 +215,7 @@ public class LocationController {
         }
     }
 
-    // DEBUG DTO
+    //ahmet burası debug dto kısmı
     @lombok.Data
     @lombok.AllArgsConstructor
     public static class DebugResult {
