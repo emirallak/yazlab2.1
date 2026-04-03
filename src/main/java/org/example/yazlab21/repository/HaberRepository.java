@@ -11,7 +11,6 @@ public interface HaberRepository extends MongoRepository<Haber, String> {
 
     boolean existsByLink(String link);
 
-    // Kategori/Tür'e göre haberleri bul
     List<Haber> findByHaberTuru(String haberTuru);
 
 }

@@ -16,21 +16,21 @@ public class PageController {
 
     private final GoogleMapsConfig googleMapsConfig;
 
-    // Kullanıcı tarayıcıya "/admin" yazdığında bu metod tetiklenir
+
     @GetMapping("/admin")
     public String adminPaneliniGoster() {
-        // static klasörünün içindeki admin-panel.html dosyasına yönlendir (forward)
+
         return "forward:/admin-panel.html";
     }
 
-    // Harita sayfası
+
     @GetMapping("/map")
     public String getMapPage() {
-        // static klasörünün içindeki map.html dosyasına yönlendir (forward)
+
         return "forward:/map.html";
     }
 
-    // Google Maps API Key'i döndür
+
     @GetMapping(value = "/api/config/maps-api-key", produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseBody
     public Map<String, String> getGoogleMapsApiKey() {

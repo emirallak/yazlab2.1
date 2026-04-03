@@ -42,19 +42,7 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- Zemberek Kelime Çözümleme (Morphology) -->
-        <dependency>
-            <groupId>zemberek-nlp</groupId>
-            <artifactId>zemberek-morphology</artifactId>
-            <version>0.17.1</version>
-        </dependency>
 
-        <!-- Zemberek Kelime Ayrıştırma (Tokenization) -->
-        <dependency>
-            <groupId>zemberek-nlp</groupId>
-            <artifactId>zemberek-tokenization</artifactId>
-            <version>0.17.1</version>
-        </dependency>
 
         <dependency>
             <groupId>org.jsoup</groupId>

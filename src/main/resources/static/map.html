@@ -209,7 +209,7 @@
 <body>
     <div class="container">
         <div class="sidebar">
-            <h2>🗺️ Haber Konumları</h2>
+            <h2>Haber Konumları</h2>
 
             <div class="category-filter">
                 <label for="categorySelect">Kategori Filtrele:</label>
@@ -219,22 +219,22 @@
             </div>
 
             <div id="newsList" class="news-list">
-                <div class="loading">⏳ Yükleniyor...</div>
+                <div class="loading">Yükleniyor...</div>
             </div>
 
             <div class="stats">
-                <p><strong>📊 Toplam:</strong> <span id="totalNews">0</span></p>
-                <p><strong>📍 Konumlu:</strong> <span id="locatedNews">0</span></p>
-                <p><strong>👁️ Görüntülenen:</strong> <span id="displayedNews">0</span></p>
+                <p><strong>Toplam:</strong> <span id="totalNews">0</span></p>
+                <p><strong>Konumu Bulunan:</strong> <span id="locatedNews">0</span></p>
+                <p><strong>Görüntülenen:</strong> <span id="displayedNews">0</span></p>
             </div>
         </div>
 
         <div class="map-container">
             <div id="map"></div>
             <div class="controls">
-                <button onclick="refreshMap()">🔄 Yenile</button>
-                <button onclick="zoomToKocaeli()">📍 Kocaeli</button>
-                <button onclick="resetMap()">↺ Sıfırla</button>
+                <button onclick="refreshMap()">Yenile</button>
+                <button onclick="zoomToKocaeli()">Kocaeli Merkez</button>
+                <button onclick="resetMap()">Görünümü Sıfırla</button>
             </div>
         </div>
     </div>
@@ -260,13 +260,13 @@
                 };
                 script.onerror = () => {
                     document.getElementById('newsList').innerHTML =
-                        '<div class="error">❌ Google Maps API yüklenemedi</div>';
+                        '<div class="error">Google Maps API yüklenemedi. Ağ bağlantınızı kontrol edin.</div>';
                 };
                 document.head.appendChild(script);
             } catch (error) {
                 console.error('API Key yüklenemedi:', error);
                 document.getElementById('newsList').innerHTML =
-                    '<div class="error">❌ Google Maps API Key ayarlanmalı. Lütfen application.properties dosyasını kontrol edin.</div>';
+                    '<div class="error">Google Maps API Key ayarlanmamış. Lütfen sistem yapılandırmasını kontrol edin.</div>';
             }
         }
 
@@ -319,7 +319,7 @@
                 .catch(error => {
                     console.error('Hata:', error);
                     document.getElementById('newsList').innerHTML =
-                        '<div class="error">❌ Veri yüklenemedi</div>';
+                        '<div class="error">Veri yüklenemedi. Sunucu bağlantısını kontrol edin.</div>';
                 });
         }
 
